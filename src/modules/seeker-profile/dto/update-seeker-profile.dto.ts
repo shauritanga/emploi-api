@@ -8,7 +8,7 @@ import {
   Min,
   IsUrl,
 } from 'class-validator';
-import { AvailabilityStatus } from 'generated/prisma';
+import { AvailabilityStatus } from '@prisma/client';
 import { JobType } from 'src/common/enums';
 
 export class UpdateSeekerProfileDto {

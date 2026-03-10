@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { VerificationStatus } from '../../../generated/prisma';
+import { VerificationStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.services';
 
 export class UpdateEmployerProfileDto {

@@ -1,6 +1,6 @@
 import { IsOptional, IsString, IsEnum, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AvailabilityStatus } from 'generated/prisma';
+import { AvailabilityStatus } from '@prisma/client';
 
 export class SeekerSearchDto {
   @IsOptional() @IsString() skills?: string;

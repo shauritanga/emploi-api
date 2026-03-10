@@ -1,9 +1,7 @@
 import { Process, Processor } from '@nestjs/bull';
 import bull from 'bull';
 import { Logger } from '@nestjs/common';
-
-import { NotificationType } from '@prisma/enums';
-import { QueueName } from '../../../common/enums';
+import { QueueName, NotificationType } from '../../../common/enums';
 import { PrismaService } from 'src/prisma/prisma.services';
 
 @Processor(QueueName.NOTIFICATIONS)

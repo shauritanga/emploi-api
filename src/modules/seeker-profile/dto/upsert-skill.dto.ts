@@ -6,7 +6,7 @@ import {
   IsInt,
   Min,
 } from 'class-validator';
-import { ProficiencyLevel } from 'generated/prisma';
+import { ProficiencyLevel } from '@prisma/client';
 
 export class UpsertSkillDto {
   @IsString() skillName: string;
