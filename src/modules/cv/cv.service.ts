@@ -1,0 +1,166 @@
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Inject,
+} from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bull';
+import bull from 'bull';
+import { QueueName } from '../../common/enums';
+import { PrismaService } from 'src/prisma/prisma.services';
+
+export class CreateCvDto {
+  title: string;
+  templateId?: string;
+  isDefault?: boolean;
+  isPublic?: boolean;
+}
+
+@Injectable()
+export class CvService {
+  constructor(
+    private prisma: PrismaService,
+    @InjectQueue(QueueName.CV_GENERATION) private cvQueue: bull.Queue,
+  ) {}
+
+  async create(seekerUserId: string, dto: CreateCvDto) {
+    const seeker = await this.prisma.seekerProfile.findUnique({
+      where: { userId: seekerUserId },
+      include: {
+        experiences: { orderBy: { displayOrder: 'asc' } },
+        education: { orderBy: { displayOrder: 'asc' } },
+        skills: true,
+        certifications: true,
+      },
+    });
+    if (!seeker) throw new NotFoundException('Seeker profile not found');
+
+    if (dto.isDefault) {
+      await this.prisma.cv.updateMany({
+        where: { seekerId: seeker.id },
+        data: { isDefault: false },
+      });
+    }
+
+    const cv = await this.prisma.cv.create({
+      data: {
+        seekerId: seeker.id,
+        templateId: dto.templateId,
+        title: dto.title,
+        contentJson: {
+          personalInfo: {
+            fullName: seeker.fullName,
+            headline: seeker.headline,
+            phone: seeker.phone,
+            bio: seeker.bio,
+            location: seeker.locationIsPublic
+              ? `${seeker.locationCity}, ${seeker.locationCountry}`
+              : seeker.locationCountry,
+          },
+          experiences: seeker.experiences,
+          education: seeker.education,
+          skills: seeker.skills,
+          certifications: seeker.certifications,
+        },
+        isDefault: dto.isDefault ?? false,
+        isPublic: dto.isPublic ?? false,
+      },
+    });
+
+    // Queue PDF generation
+    await this.cvQueue.add('generate-pdf', { cvId: cv.id });
+
+    return cv;
+  }
+
+  async getSeeekerCvs(seekerUserId: string) {
+    const seeker = await this.prisma.seekerProfile.findUnique({
+      where: { userId: seekerUserId },
+    });
+    if (!seeker) throw new NotFoundException();
+
+    return this.prisma.cv.findMany({
+      where: { seekerId: seeker.id },
+      include: { template: { select: { name: true, previewImageUrl: true } } },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }],
+    });
+  }
+
+  async computeJobMatchScore(
+    cvId: string,
+    jobId: string,
+    seekerUserId: string,
+  ) {
+    const cv = await this.prisma.cv.findUnique({
+      where: { id: cvId },
+      include: { seeker: true },
+    });
+    if (!cv) throw new NotFoundException('CV not found');
+    if (cv.seeker.userId !== seekerUserId) throw new ForbiddenException();
+
+    const job = await this.prisma.job.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+
+    const content = cv.contentJson as any;
+    const cvSkills: string[] =
+      content.skills?.map((s: any) => s.skillName.toLowerCase()) ?? [];
+    const requiredSkills = job.requiredSkills.map((s) => s.toLowerCase());
+    const preferredSkills = job.preferredSkills.map((s) => s.toLowerCase());
+
+    const matchedRequired = requiredSkills.filter((s) => cvSkills.includes(s));
+    const matchedPreferred = preferredSkills.filter((s) =>
+      cvSkills.includes(s),
+    );
+
+    const requiredScore = Math.round(
+      (matchedRequired.length / Math.max(requiredSkills.length, 1)) * 60,
+    );
+    const preferredScore = Math.round(
+      (matchedPreferred.length / Math.max(preferredSkills.length, 1)) * 20,
+    );
+
+    const missingRequired = requiredSkills.filter((s) => !cvSkills.includes(s));
+    const missingPreferred = preferredSkills.filter(
+      (s) => !cvSkills.includes(s),
+    );
+
+    const totalScore = Math.min(requiredScore + preferredScore + 20, 100); // +20 base
+
+    return {
+      score: totalScore,
+      matchedRequired,
+      matchedPreferred,
+      missingRequired,
+      missingPreferred,
+      recommendations: missingRequired.map(
+        (s) => `Add "${s}" to your skills to improve your match`,
+      ),
+    };
+  }
+
+  async getTemplates() {
+    return this.prisma.cvTemplate.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        previewImageUrl: true,
+        category: true,
+        isAtsOptimized: true,
+      },
+    });
+  }
+
+  async delete(cvId: string, seekerUserId: string) {
+    const cv = await this.prisma.cv.findUnique({
+      where: { id: cvId },
+      include: { seeker: true },
+    });
+    if (!cv) throw new NotFoundException();
+    if (cv.seeker.userId !== seekerUserId) throw new ForbiddenException();
+    if (cv.isDefault) throw new ForbiddenException('Cannot delete default CV');
+
+    return this.prisma.cv.delete({ where: { id: cvId } });
+  }
+}

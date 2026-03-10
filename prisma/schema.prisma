@@ -1,0 +1,783 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  SEEKER
+  EMPLOYER
+  BOTH
+  ADMIN
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  REMOTE
+  HYBRID
+  INTERNSHIP
+}
+
+enum JobStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  CLOSED
+  EXPIRED
+}
+
+enum ExperienceLevel {
+  ENTRY
+  MID
+  SENIOR
+  LEAD
+  EXECUTIVE
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  RECEIVED
+  OPENED
+  SCREENING
+  SHORTLISTED
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+  WITHDRAWN
+  AUTO_CLOSED
+}
+
+enum InterviewType {
+  PHONE
+  VIDEO
+  IN_PERSON
+  TECHNICAL
+  PANEL
+}
+
+enum ConversationType {
+  SEEKER_EMPLOYER
+  SEEKER_SEEKER
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum NotificationType {
+  APPLICATION_STATUS
+  NEW_MESSAGE
+  INTERVIEW_REQUEST
+  OFFER_RECEIVED
+  JOB_ALERT
+  NEW_RATING
+  PROFILE_VIEW
+  EMPLOYER_MESSAGE_REQUEST
+}
+
+enum TeamMemberRole {
+  ADMIN
+  RECRUITER
+  HIRING_MANAGER
+}
+
+enum AvailabilityStatus {
+  ACTIVELY_LOOKING
+  OPEN_TO_OPPORTUNITIES
+  NOT_LOOKING
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  EXPERT
+}
+
+enum QuestionType {
+  TEXT
+  MULTIPLE_CHOICE
+  FILE_UPLOAD
+  URL
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum OAuthProvider {
+  GOOGLE
+  LINKEDIN
+}
+
+// ─────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  passwordHash           String?
+  role                   UserRole  @default(SEEKER)
+  isActive               Boolean   @default(true)
+  isEmailVerified        Boolean   @default(false)
+  emailVerificationToken String?
+  passwordResetToken     String?
+  passwordResetExpires   DateTime?
+  lastLoginAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  oauthAccounts    OauthAccount[]
+  seekerProfile    SeekerProfile?
+  employerProfile  EmployerProfile?
+  teamMemberships  EmployerTeamMember[]
+  sentMessages     Message[]                  @relation("SentMessages")
+  notifications    Notification[]
+  applicationNotes ApplicationNote[]
+  statusChanges    ApplicationStatusHistory[] @relation("StatusChangedBy")
+  ratingsGiven     Rating[]                   @relation("RatingsGiven")
+  ratingsReceived  Rating[]                   @relation("RatingsReceived")
+  devices          UserDevice[]
+  communityPosts   CommunityPost[]
+  communityReplies CommunityReply[]
+
+  @@map("users")
+}
+
+model OauthAccount {
+  id             String        @id @default(uuid())
+  userId         String
+  provider       OAuthProvider
+  providerUserId String
+  accessToken    String?
+  refreshToken   String?
+  createdAt      DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@map("oauth_accounts")
+}
+
+model UserDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  fcmToken  String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_devices")
+}
+
+// ─────────────────────────────────────────────
+// SEEKER
+// ─────────────────────────────────────────────
+
+model SeekerProfile {
+  id                     String             @id @default(uuid())
+  userId                 String             @unique
+  fullName               String
+  phone                  String?
+  headline               String?
+  bio                    String?
+  locationCountry        String?
+  locationCity           String?
+  locationIsPublic       Boolean            @default(false)
+  profilePhotoUrl        String?
+  videoIntroUrl          String?
+  availabilityStatus     AvailabilityStatus @default(ACTIVELY_LOOKING)
+  preferredJobTypes      JobType[]
+  preferredLocations     String[]
+  isOpenToRelocation     Boolean            @default(false)
+  salaryExpectationMin   Int?
+  salaryExpectationMax   Int?
+  salaryCurrency         String             @default("USD")
+  profileCompletionScore Int                @default(0)
+  isProfilePublic        Boolean            @default(true)
+  aggregateRating        Decimal            @default(0) @db.Decimal(3, 2)
+  totalRatings           Int                @default(0)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user            User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experiences     SeekerExperience[]
+  education       SeekerEducation[]
+  skills          SeekerSkill[]
+  certifications  SeekerCertification[]
+  cvs             Cv[]
+  applications    Application[]
+  jobAlerts       JobAlert[]
+  savedJobs       SavedJob[]
+  participants    ConversationParticipant[]
+  ratingsReceived Rating[]                  @relation("SeekerRatingsReceived")
+
+  @@map("seeker_profiles")
+}
+
+model SeekerExperience {
+  id             String    @id @default(uuid())
+  seekerId       String
+  companyName    String
+  jobTitle       String
+  location       String?
+  employmentType JobType?
+  startDate      DateTime
+  endDate        DateTime?
+  isCurrent      Boolean   @default(false)
+  description    String?
+  achievements   String[]
+  skillsUsed     String[]
+  displayOrder   Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  seeker SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+
+  @@map("seeker_experiences")
+}
+
+model SeekerEducation {
+  id              String    @id @default(uuid())
+  seekerId        String
+  institutionName String
+  degree          String?
+  fieldOfStudy    String?
+  startDate       DateTime?
+  endDate         DateTime?
+  grade           String?
+  activities      String?
+  displayOrder    Int       @default(0)
+
+  seeker SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+
+  @@map("seeker_education")
+}
+
+model SeekerSkill {
+  id                String           @id @default(uuid())
+  seekerId          String
+  skillName         String
+  proficiencyLevel  ProficiencyLevel @default(INTERMEDIATE)
+  yearsOfExperience Int?
+  isFeatured        Boolean          @default(false)
+
+  seeker SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+
+  @@unique([seekerId, skillName])
+  @@map("seeker_skills")
+}
+
+model SeekerCertification {
+  id                  String    @id @default(uuid())
+  seekerId            String
+  name                String
+  issuingOrganization String?
+  issueDate           DateTime?
+  expiryDate          DateTime?
+  credentialUrl       String?
+
+  seeker SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+
+  @@map("seeker_certifications")
+}
+
+// ─────────────────────────────────────────────
+// EMPLOYER
+// ─────────────────────────────────────────────
+
+model EmployerProfile {
+  id                      String             @id @default(uuid())
+  userId                  String             @unique
+  companyName             String
+  companyEmail            String?
+  phone                   String?
+  industry                String?
+  companySize             String?
+  foundedYear             Int?
+  websiteUrl              String?
+  logoUrl                 String?
+  description             String?
+  cultureHighlights       String[]
+  locationCountry         String?
+  locationCity            String?
+  linkedinUrl             String?
+  verificationStatus      VerificationStatus @default(PENDING)
+  verificationDocumentUrl String?
+  isProfilePublic         Boolean            @default(true)
+  aggregateRating         Decimal            @default(0) @db.Decimal(3, 2)
+  totalRatings            Int                @default(0)
+  avgResponseTimeHours    Int?
+  candidateFriendlyBadge  Boolean            @default(false)
+  lowResponsivenessFlag   Boolean            @default(false)
+  subscriptionTier        SubscriptionTier   @default(FREE)
+  subscriptionExpiresAt   DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamMembers     EmployerTeamMember[]
+  jobs            Job[]
+  ratingsReceived Rating[]             @relation("EmployerRatingsReceived")
+
+  @@map("employer_profiles")
+}
+
+model EmployerTeamMember {
+  id         String         @id @default(uuid())
+  employerId String
+  userId     String
+  role       TeamMemberRole @default(RECRUITER)
+  invitedAt  DateTime       @default(now())
+  acceptedAt DateTime?
+
+  employer EmployerProfile @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([employerId, userId])
+  @@map("employer_team_members")
+}
+
+// ─────────────────────────────────────────────
+// CV
+// ─────────────────────────────────────────────
+
+model CvTemplate {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?
+  previewImageUrl String?
+  htmlTemplate    String
+  isActive        Boolean  @default(true)
+  isAtsOptimized  Boolean  @default(true)
+  category        String?
+  createdAt       DateTime @default(now())
+
+  cvs Cv[]
+
+  @@map("cv_templates")
+}
+
+model Cv {
+  id             String    @id @default(uuid())
+  seekerId       String
+  templateId     String?
+  title          String
+  contentJson    Json
+  pdfUrl         String?
+  pdfGeneratedAt DateTime?
+  isDefault      Boolean   @default(false)
+  isPublic       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  seeker       SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+  template     CvTemplate?   @relation(fields: [templateId], references: [id])
+  applications Application[]
+
+  @@map("cvs")
+}
+
+// ─────────────────────────────────────────────
+// JOBS
+// ─────────────────────────────────────────────
+
+model Job {
+  id                  String          @id @default(uuid())
+  employerId          String
+  title               String
+  description         String
+  requirements        String?
+  benefits            String?
+  locationCountry     String?
+  locationCity        String?
+  isRemote            Boolean         @default(false)
+  jobType             JobType
+  experienceLevel     ExperienceLevel
+  salaryMin           Int
+  salaryMax           Int
+  salaryCurrency      String          @default("USD")
+  salaryIsNegotiable  Boolean         @default(false)
+  requiredSkills      String[]
+  preferredSkills     String[]
+  isStreamlinedHiring Boolean         @default(false)
+  applicationDeadline DateTime?
+  maxApplicants       Int?
+  status              JobStatus       @default(DRAFT)
+  viewsCount          Int             @default(0)
+  applicationsCount   Int             @default(0)
+  publishedAt         DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  employer           EmployerProfile        @relation(fields: [employerId], references: [id], onDelete: Cascade)
+  screeningQuestions JobScreeningQuestion[]
+  applications       Application[]
+  savedBy            SavedJob[]
+
+  @@map("jobs")
+}
+
+model JobScreeningQuestion {
+  id            String       @id @default(uuid())
+  jobId         String
+  question      String
+  questionType  QuestionType @default(TEXT)
+  options       Json?
+  isRequired    Boolean      @default(true)
+  isKnockout    Boolean      @default(false)
+  correctOption String?
+  displayOrder  Int          @default(0)
+
+  job     Job                          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  answers ApplicationScreeningAnswer[]
+
+  @@map("job_screening_questions")
+}
+
+model SavedJob {
+  id        String   @id @default(uuid())
+  seekerId  String
+  jobId     String
+  listName  String   @default("Saved")
+  createdAt DateTime @default(now())
+
+  seeker SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+  job    Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([seekerId, jobId])
+  @@map("saved_jobs")
+}
+
+model JobAlert {
+  id               String            @id @default(uuid())
+  seekerId         String
+  name             String?
+  keywords         String[]
+  location         String?
+  jobTypes         JobType[]
+  experienceLevels ExperienceLevel[]
+  salaryMin        Int?
+  isRemoteOnly     Boolean           @default(false)
+  isActive         Boolean           @default(true)
+  lastTriggeredAt  DateTime?
+  createdAt        DateTime          @default(now())
+
+  seeker SeekerProfile @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+
+  @@map("job_alerts")
+}
+
+// ─────────────────────────────────────────────
+// APPLICATIONS
+// ─────────────────────────────────────────────
+
+model Application {
+  id              String            @id @default(uuid())
+  jobId           String
+  seekerId        String
+  cvId            String?
+  coverLetter     String?
+  status          ApplicationStatus @default(SUBMITTED)
+  matchScore      Int?
+  screeningScore  Int?
+  rejectionReason String?
+  openedAt        DateTime?
+  autoClosedAt    DateTime?
+  hiredAt         DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  job              Job                          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  seeker           SeekerProfile                @relation(fields: [seekerId], references: [id], onDelete: Cascade)
+  cv               Cv?                          @relation(fields: [cvId], references: [id])
+  screeningAnswers ApplicationScreeningAnswer[]
+  statusHistory    ApplicationStatusHistory[]
+  notes            ApplicationNote[]
+  interviews       Interview[]
+  offer            Offer?
+  ratings          Rating[]
+
+  @@unique([jobId, seekerId])
+  @@map("applications")
+}
+
+model ApplicationScreeningAnswer {
+  id            String   @id @default(uuid())
+  applicationId String
+  questionId    String
+  answer        String
+  isCorrect     Boolean?
+
+  application Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  question    JobScreeningQuestion @relation(fields: [questionId], references: [id])
+
+  @@map("application_screening_answers")
+}
+
+model ApplicationStatusHistory {
+  id            String             @id @default(uuid())
+  applicationId String
+  fromStatus    ApplicationStatus?
+  toStatus      ApplicationStatus
+  changedById   String?
+  note          String?
+  createdAt     DateTime           @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  changedBy   User?       @relation("StatusChangedBy", fields: [changedById], references: [id])
+
+  @@map("application_status_history")
+}
+
+model ApplicationNote {
+  id            String   @id @default(uuid())
+  applicationId String
+  authorId      String
+  content       String
+  isInternal    Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  author      User        @relation(fields: [authorId], references: [id])
+
+  @@map("application_notes")
+}
+
+// ─────────────────────────────────────────────
+// INTERVIEWS & OFFERS
+// ─────────────────────────────────────────────
+
+model Interview {
+  id              String        @id @default(uuid())
+  applicationId   String
+  scheduledAt     DateTime
+  durationMinutes Int           @default(60)
+  interviewType   InterviewType
+  location        String?
+  meetingLink     String?
+  phoneNumber     String?
+  stageNumber     Int           @default(1)
+  notes           String?
+  isConfirmed     Boolean       @default(false)
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("interviews")
+}
+
+model Offer {
+  id              String    @id @default(uuid())
+  applicationId   String    @unique
+  salaryOffered   Int
+  currency        String    @default("USD")
+  startDate       DateTime?
+  notes           String?
+  expiresAt       DateTime?
+  acceptedAt      DateTime?
+  rejectedAt      DateTime?
+  negotiationNote String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("offers")
+}
+
+// ─────────────────────────────────────────────
+// MESSAGING
+// ─────────────────────────────────────────────
+
+model Conversation {
+  id            String           @id @default(uuid())
+  type          ConversationType
+  jobId         String?
+  isAccepted    Boolean          @default(false)
+  initiatedById String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  seekerId       String?
+  lastReadAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  seeker       SeekerProfile? @relation(fields: [seekerId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String        @id @default(uuid())
+  conversationId String
+  senderId       String
+  content        String
+  status         MessageStatus @default(SENT)
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+// ─────────────────────────────────────────────
+// COMMUNITY
+// ─────────────────────────────────────────────
+
+model CommunityRoom {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  industry    String?
+  iconUrl     String?
+  memberCount Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  memberships CommunityMembership[]
+  posts       CommunityPost[]
+
+  @@map("community_rooms")
+}
+
+model CommunityMembership {
+  id       String   @id @default(uuid())
+  roomId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  room CommunityRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@map("community_memberships")
+}
+
+model CommunityPost {
+  id          String   @id @default(uuid())
+  roomId      String
+  authorId    String
+  content     String
+  isAnonymous Boolean  @default(false)
+  isPinned    Boolean  @default(false)
+  likesCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  room    CommunityRoom    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  author  User             @relation(fields: [authorId], references: [id])
+  replies CommunityReply[]
+
+  @@map("community_posts")
+}
+
+model CommunityReply {
+  id        String   @id @default(uuid())
+  postId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  post   CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id])
+
+  @@map("community_replies")
+}
+
+// ─────────────────────────────────────────────
+// RATINGS
+// ─────────────────────────────────────────────
+
+model Rating {
+  id                String   @id @default(uuid())
+  applicationId     String
+  raterId           String
+  rateeId           String
+  seekerProfileId   String?
+  employerProfileId String?
+  scores            Json
+  overallScore      Decimal  @db.Decimal(3, 2)
+  reviewText        String?
+  isPublic          Boolean  @default(true)
+  isDisputed        Boolean  @default(false)
+  disputeNote       String?
+  createdAt         DateTime @default(now())
+
+  application     Application      @relation(fields: [applicationId], references: [id])
+  rater           User             @relation("RatingsGiven", fields: [raterId], references: [id])
+  ratee           User             @relation("RatingsReceived", fields: [rateeId], references: [id])
+  seekerProfile   SeekerProfile?   @relation("SeekerRatingsReceived", fields: [seekerProfileId], references: [id])
+  employerProfile EmployerProfile? @relation("EmployerRatingsReceived", fields: [employerProfileId], references: [id])
+
+  @@unique([applicationId, raterId])
+  @@map("ratings")
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
