@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
-import { InterviewsService } from './interviews.service';
-import { InterviewsController } from './interviews.controller';
+import { OffersService } from './offers.service';
+import { OffersController } from './offers.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { QueueName } from 'src/common/enums';
 
@@ -10,8 +10,8 @@ import { QueueName } from 'src/common/enums';
     PrismaModule,
     BullModule.registerQueue({ name: QueueName.NOTIFICATIONS }),
   ],
-  controllers: [InterviewsController],
-  providers: [InterviewsService],
-  exports: [InterviewsService],
+  controllers: [OffersController],
+  providers: [OffersService],
+  exports: [OffersService],
 })
-export class InterviewsModule {}
+export class OffersModule {}

@@ -209,6 +209,84 @@ export class RatingsService {
     });
   }
 
+  async getDispute(ratingId: string, userId: string) {
+    const rating = await this.prisma.rating.findUnique({
+      where: { id: ratingId },
+      select: {
+        id: true,
+        raterId: true,
+        rateeId: true,
+        isDisputed: true,
+        disputeNote: true,
+        createdAt: true,
+      },
+    });
+
+    if (!rating) throw new NotFoundException('Rating not found');
+    if (rating.raterId !== userId && rating.rateeId !== userId) {
+      throw new ForbiddenException();
+    }
+
+    return rating;
+  }
+
+  async updateRating(
+    ratingId: string,
+    userId: string,
+    dto: { scores?: Record<string, number>; reviewText?: string },
+  ) {
+    const rating = await this.prisma.rating.findUnique({ where: { id: ratingId } });
+    if (!rating) throw new NotFoundException('Rating not found');
+    if (rating.raterId !== userId) throw new ForbiddenException();
+
+    if (dto.scores) this.validateScores(dto.scores);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.rating.update({
+        where: { id: ratingId },
+        data: {
+          ...(dto.scores && {
+            scores: dto.scores,
+            overallScore: this.computeOverall(dto.scores),
+          }),
+          ...(dto.reviewText !== undefined && { reviewText: dto.reviewText }),
+        },
+      });
+
+      if (r.employerProfileId) {
+        await this.updateEmployerAggregateRating(tx, r.employerProfileId);
+      }
+      if (r.seekerProfileId) {
+        await this.updateSeekerAggregateRating(tx, r.seekerProfileId);
+      }
+
+      return r;
+    });
+
+    return updated;
+  }
+
+  async deleteRating(ratingId: string, userId: string) {
+    const rating = await this.prisma.rating.findUnique({ where: { id: ratingId } });
+    if (!rating) throw new NotFoundException('Rating not found');
+    if (rating.raterId !== userId) throw new ForbiddenException();
+
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      const r = await tx.rating.delete({ where: { id: ratingId } });
+
+      if (r.employerProfileId) {
+        await this.updateEmployerAggregateRating(tx, r.employerProfileId);
+      }
+      if (r.seekerProfileId) {
+        await this.updateSeekerAggregateRating(tx, r.seekerProfileId);
+      }
+
+      return r;
+    });
+
+    return deleted;
+  }
+
   private validateScores(scores: Record<string, number>) {
     Object.values(scores).forEach((v) => {
       if (v < 1 || v > 5)

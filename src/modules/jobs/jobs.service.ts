@@ -9,7 +9,7 @@ import {
 import { REDIS_CLIENT } from 'src/redis/redis.module';
 import { Redis } from 'ioredis';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { JobStatus } from '../../common/enums';
+import { JobStatus, QuestionType } from '../../common/enums';
 import { Prisma } from '@prisma/client';
 import { CreateJobDto, UpdateJobDto, JobQueryDto } from './dto/job.dto';
 import { CacheTTL } from '../../common/enums';
@@ -29,15 +29,54 @@ export class JobsService {
     });
     if (!employer) throw new NotFoundException('Employer profile not found');
 
-    const job = await this.prisma.job.create({
-      data: {
-        ...dto,
-        employerId: employer.id,
-        applicationDeadline: dto.applicationDeadline
-          ? new Date(dto.applicationDeadline)
-          : null,
-      },
-      include: { employer: { select: { companyName: true, logoUrl: true } } },
+    // Destructure screening questions from dto
+    const { screeningQuestions, ...jobData } = dto;
+
+    const job = await this.prisma.$transaction(async (tx) => {
+      // Create job
+      const createdJob = await tx.job.create({
+        data: {
+          ...jobData,
+          employerId: employer.id,
+          applicationDeadline: dto.applicationDeadline
+            ? new Date(dto.applicationDeadline)
+            : null,
+        },
+      });
+
+      // Create screening questions
+      if (screeningQuestions && screeningQuestions.length > 0) {
+        await tx.jobScreeningQuestion.createMany({
+          data: screeningQuestions.map((q, index) => {
+            const questionData: any = {
+              jobId: createdJob.id,
+              question: q.question,
+              questionType: q.questionType || QuestionType.TEXT,
+              isRequired: q.isRequired !== undefined ? q.isRequired : true,
+              isKnockout: q.isKnockout !== undefined ? q.isKnockout : false,
+              displayOrder:
+                q.displayOrder !== undefined ? q.displayOrder : index,
+            };
+
+            if (q.options) {
+              questionData.options = JSON.stringify(q.options);
+            }
+            if (q.correctOption) {
+              questionData.correctOption = q.correctOption;
+            }
+
+            return questionData;
+          }),
+        });
+      }
+
+      return await tx.job.findUnique({
+        where: { id: createdJob.id },
+        include: {
+          employer: { select: { companyName: true, logoUrl: true } },
+          screeningQuestions: true,
+        },
+      });
     });
 
     return job;
@@ -227,14 +266,57 @@ export class JobsService {
   async update(jobId: string, employerUserId: string, dto: UpdateJobDto) {
     await this.findJobAndVerifyOwner(jobId, employerUserId);
 
-    const updated = await this.prisma.job.update({
-      where: { id: jobId },
-      data: {
-        ...dto,
-        applicationDeadline: dto.applicationDeadline
-          ? new Date(dto.applicationDeadline)
-          : undefined,
-      },
+    // Destructure screening questions from dto
+    const { screeningQuestions, ...updateData } = dto;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Update job details
+      const job = await tx.job.update({
+        where: { id: jobId },
+        data: {
+          ...updateData,
+          applicationDeadline: dto.applicationDeadline
+            ? new Date(dto.applicationDeadline)
+            : undefined,
+        },
+      });
+
+      // If screening questions are provided, update them
+      if (screeningQuestions && screeningQuestions.length > 0) {
+        // Delete old screening questions
+        await tx.jobScreeningQuestion.deleteMany({
+          where: { jobId },
+        });
+
+        // Create new screening questions
+        await tx.jobScreeningQuestion.createMany({
+          data: screeningQuestions.map((q, index) => {
+            const questionData: any = {
+              jobId,
+              question: q.question,
+              questionType: q.questionType || QuestionType.TEXT,
+              isRequired: q.isRequired !== undefined ? q.isRequired : true,
+              isKnockout: q.isKnockout !== undefined ? q.isKnockout : false,
+              displayOrder:
+                q.displayOrder !== undefined ? q.displayOrder : index,
+            };
+
+            if (q.options) {
+              questionData.options = JSON.stringify(q.options);
+            }
+            if (q.correctOption) {
+              questionData.correctOption = q.correctOption;
+            }
+
+            return questionData;
+          }),
+        });
+      }
+
+      return await tx.job.findUnique({
+        where: { id: jobId },
+        include: { screeningQuestions: true },
+      });
     });
 
     await this.invalidateFeedCache();

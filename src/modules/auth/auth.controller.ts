@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -60,7 +61,7 @@ export class AuthController {
       );
       return this.authService.refresh(payload.sub, dto.refreshToken);
     } catch {
-      throw new Error('Invalid refresh token');
+      throw new UnauthorizedException('Invalid refresh token');
     }
   }
 

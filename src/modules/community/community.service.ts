@@ -150,4 +150,84 @@ export class CommunityService {
 
     return this.prisma.communityPost.delete({ where: { id: postId } });
   }
+
+  async updatePost(userId: string, postId: string, content: string) {
+    if (!content?.trim()) {
+      throw new BadRequestException('Post content is required');
+    }
+
+    const post = await this.prisma.communityPost.findUnique({
+      where: { id: postId },
+    });
+    if (!post) throw new NotFoundException();
+    if (post.authorId !== userId) throw new ForbiddenException();
+
+    return this.prisma.communityPost.update({
+      where: { id: postId },
+      data: { content },
+    });
+  }
+
+  async updateReply(userId: string, replyId: string, content: string) {
+    if (!content?.trim()) {
+      throw new BadRequestException('Reply content is required');
+    }
+
+    const reply = await this.prisma.communityReply.findUnique({
+      where: { id: replyId },
+    });
+    if (!reply) throw new NotFoundException();
+    if (reply.authorId !== userId) throw new ForbiddenException();
+
+    return this.prisma.communityReply.update({
+      where: { id: replyId },
+      data: { content },
+    });
+  }
+
+  async deleteReply(userId: string, replyId: string) {
+    const reply = await this.prisma.communityReply.findUnique({
+      where: { id: replyId },
+    });
+    if (!reply) throw new NotFoundException();
+    if (reply.authorId !== userId) throw new ForbiddenException();
+
+    return this.prisma.communityReply.delete({ where: { id: replyId } });
+  }
+
+  async likePost(userId: string, postId: string) {
+    const post = await this.prisma.communityPost.findUnique({
+      where: { id: postId },
+      select: { id: true },
+    });
+    if (!post) throw new NotFoundException();
+
+    const updated = await this.prisma.communityPost.update({
+      where: { id: postId },
+      data: { likesCount: { increment: 1 } },
+      select: { id: true, likesCount: true },
+    });
+
+    return { ...updated, likedBy: userId };
+  }
+
+  async unlikePost(userId: string, postId: string) {
+    const post = await this.prisma.communityPost.findUnique({
+      where: { id: postId },
+      select: { id: true, likesCount: true },
+    });
+    if (!post) throw new NotFoundException();
+
+    const updated = await this.prisma.communityPost.update({
+      where: { id: postId },
+      data: {
+        likesCount: {
+          decrement: post.likesCount > 0 ? 1 : 0,
+        },
+      },
+      select: { id: true, likesCount: true },
+    });
+
+    return { ...updated, unlikedBy: userId };
+  }
 }

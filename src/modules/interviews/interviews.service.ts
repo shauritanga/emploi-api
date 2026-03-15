@@ -135,4 +135,127 @@ export class InterviewsService {
       data: { cancelledAt: new Date(), cancelReason: reason },
     });
   }
+
+  async getInterviewForUser(interviewId: string, userId: string) {
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: interviewId },
+      include: {
+        application: {
+          include: {
+            job: { include: { employer: true } },
+            seeker: { include: { user: true } },
+          },
+        },
+      },
+    });
+
+    if (!interview) throw new NotFoundException();
+
+    const isEmployer = interview.application.job.employer.userId === userId;
+    const isSeeker = interview.application.seeker.user.id === userId;
+    if (!isEmployer && !isSeeker) throw new ForbiddenException();
+
+    return interview;
+  }
+
+  async reschedule(
+    interviewId: string,
+    userId: string,
+    dto: Partial<CreateInterviewDto>,
+  ) {
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: interviewId },
+      include: {
+        application: {
+          include: {
+            job: { include: { employer: true } },
+            seeker: { include: { user: true } },
+          },
+        },
+      },
+    });
+
+    if (!interview) throw new NotFoundException();
+
+    const isEmployer = interview.application.job.employer.userId === userId;
+    const isSeeker = interview.application.seeker.user.id === userId;
+    if (!isEmployer && !isSeeker) throw new ForbiddenException();
+
+    return this.prisma.interview.update({
+      where: { id: interviewId },
+      data: {
+        ...(dto.scheduledAt && { scheduledAt: new Date(dto.scheduledAt) }),
+        ...(dto.durationMinutes !== undefined && {
+          durationMinutes: dto.durationMinutes,
+        }),
+        ...(dto.location !== undefined && { location: dto.location }),
+        ...(dto.meetingLink !== undefined && { meetingLink: dto.meetingLink }),
+        ...(dto.phoneNumber !== undefined && { phoneNumber: dto.phoneNumber }),
+        ...(dto.notes !== undefined && { notes: dto.notes }),
+      },
+    });
+  }
+
+  async getByApplicationForUser(applicationId: string, userId: string) {
+    const application = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+      include: {
+        job: { include: { employer: true } },
+        seeker: { include: { user: true } },
+      },
+    });
+
+    if (!application) throw new NotFoundException();
+
+    const isEmployer = application.job.employer.userId === userId;
+    const isSeeker = application.seeker.user.id === userId;
+    if (!isEmployer && !isSeeker) throw new ForbiddenException();
+
+    return this.prisma.interview.findMany({
+      where: { applicationId },
+      orderBy: { scheduledAt: 'asc' },
+    });
+  }
+
+  async updateFeedback(interviewId: string, userId: string, notes: string) {
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: interviewId },
+      include: {
+        application: {
+          include: {
+            job: { include: { employer: true } },
+          },
+        },
+      },
+    });
+
+    if (!interview) throw new NotFoundException();
+    const isEmployer = interview.application.job.employer.userId === userId;
+    if (!isEmployer) throw new ForbiddenException();
+
+    return this.prisma.interview.update({
+      where: { id: interviewId },
+      data: { notes },
+    });
+  }
+
+  async remove(interviewId: string, userId: string) {
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: interviewId },
+      include: {
+        application: {
+          include: {
+            job: { include: { employer: true } },
+          },
+        },
+      },
+    });
+
+    if (!interview) throw new NotFoundException();
+    const isEmployer = interview.application.job.employer.userId === userId;
+    if (!isEmployer) throw new ForbiddenException();
+
+    await this.prisma.interview.delete({ where: { id: interviewId } });
+    return { removed: true, id: interviewId };
+  }
 }

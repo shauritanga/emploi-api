@@ -86,6 +86,83 @@ export class CvService {
     });
   }
 
+  async getById(cvId: string, seekerUserId: string) {
+    const cv = await this.prisma.cv.findUnique({
+      where: { id: cvId },
+      include: {
+        seeker: { select: { userId: true } },
+        template: { select: { name: true, previewImageUrl: true } },
+      },
+    });
+
+    if (!cv) throw new NotFoundException('CV not found');
+    if (cv.seeker.userId !== seekerUserId) throw new ForbiddenException();
+
+    return cv;
+  }
+
+  async update(
+    cvId: string,
+    seekerUserId: string,
+    dto: { title?: string; isDefault?: boolean; isPublic?: boolean },
+  ) {
+    const cv = await this.prisma.cv.findUnique({
+      where: { id: cvId },
+      include: { seeker: { select: { userId: true, id: true } } },
+    });
+    if (!cv) throw new NotFoundException('CV not found');
+    if (cv.seeker.userId !== seekerUserId) throw new ForbiddenException();
+
+    if (dto.isDefault) {
+      await this.prisma.cv.updateMany({
+        where: { seekerId: cv.seeker.id },
+        data: { isDefault: false },
+      });
+    }
+
+    return this.prisma.cv.update({
+      where: { id: cvId },
+      data: {
+        ...(dto.title !== undefined && { title: dto.title }),
+        ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
+        ...(dto.isPublic !== undefined && { isPublic: dto.isPublic }),
+      },
+    });
+  }
+
+  async setDefault(cvId: string, seekerUserId: string) {
+    const cv = await this.prisma.cv.findUnique({
+      where: { id: cvId },
+      include: { seeker: { select: { userId: true, id: true } } },
+    });
+
+    if (!cv) throw new NotFoundException('CV not found');
+    if (cv.seeker.userId !== seekerUserId) throw new ForbiddenException();
+
+    await this.prisma.$transaction([
+      this.prisma.cv.updateMany({
+        where: { seekerId: cv.seeker.id },
+        data: { isDefault: false },
+      }),
+      this.prisma.cv.update({
+        where: { id: cvId },
+        data: { isDefault: true },
+      }),
+    ]);
+
+    return { id: cvId, isDefault: true };
+  }
+
+  async getDownloadInfo(cvId: string, seekerUserId: string) {
+    const cv = await this.getById(cvId, seekerUserId);
+    return {
+      id: cv.id,
+      pdfUrl: cv.pdfUrl,
+      pdfGeneratedAt: cv.pdfGeneratedAt,
+      isReady: Boolean(cv.pdfUrl),
+    };
+  }
+
   async computeJobMatchScore(
     cvId: string,
     jobId: string,

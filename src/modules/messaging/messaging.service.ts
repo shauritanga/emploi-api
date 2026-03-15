@@ -188,7 +188,12 @@ export class MessagingService {
     });
   }
 
-  async getMessages(conversationId: string, userId: string, page = 1) {
+  async getMessages(
+    conversationId: string,
+    userId: string,
+    page = 1,
+    limit = 50,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { participants: true },
@@ -204,9 +209,46 @@ export class MessagingService {
       where: { conversationId },
       include: { sender: { select: { id: true, email: true } } },
       orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * 50,
-      take: 50,
+      skip: (page - 1) * limit,
+      take: limit,
     });
+  }
+
+  async getConversation(conversationId: string, userId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        participants: {
+          include: {
+            seeker: { select: { fullName: true, profilePhotoUrl: true } },
+          },
+        },
+      },
+    });
+
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    const isParticipant = conversation.participants.some(
+      (p) => p.userId === userId,
+    );
+    if (!isParticipant) throw new ForbiddenException();
+
+    return conversation;
+  }
+
+  async archiveConversation(conversationId: string, userId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { participants: true },
+    });
+
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    const isParticipant = conversation.participants.some(
+      (p) => p.userId === userId,
+    );
+    if (!isParticipant) throw new ForbiddenException();
+
+    await this.prisma.conversation.delete({ where: { id: conversationId } });
+    return { id: conversationId, archived: true };
   }
 
   async markConversationRead(userId: string, conversationId: string) {

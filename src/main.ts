@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import 'tsconfig-paths/register';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';

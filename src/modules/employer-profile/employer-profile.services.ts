@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { VerificationStatus } from '@prisma/client';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
+import { TeamMemberRole, VerificationStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.services';
 
 export class UpdateEmployerProfileDto {
@@ -125,7 +130,7 @@ export class EmployerProfileService {
   async inviteTeamMember(
     employerUserId: string,
     inviteeEmail: string,
-    role: string,
+    role: TeamMemberRole = TeamMemberRole.RECRUITER,
   ) {
     const [employer, invitee] = await Promise.all([
       this.prisma.employerProfile.findUnique({
@@ -135,6 +140,9 @@ export class EmployerProfileService {
     ]);
     if (!employer) throw new NotFoundException('Employer profile not found');
     if (!invitee) throw new NotFoundException('User not found');
+    if (invitee.id === employerUserId) {
+      throw new BadRequestException('Cannot add yourself as a team member');
+    }
 
     return this.prisma.employerTeamMember.upsert({
       where: {
@@ -143,9 +151,101 @@ export class EmployerProfileService {
       create: {
         employerId: employer.id,
         userId: invitee.id,
-        role: role as any,
+        role,
       },
-      update: { role: role as any },
+      update: { role },
     });
+  }
+
+  async verifyProfile(
+    employerUserId: string,
+    verificationDocumentUrl?: string,
+  ) {
+    const employer = await this.prisma.employerProfile.findUnique({
+      where: { userId: employerUserId },
+      select: { id: true },
+    });
+    if (!employer) throw new NotFoundException('Employer profile not found');
+
+    return this.prisma.employerProfile.update({
+      where: { id: employer.id },
+      data: {
+        verificationStatus: VerificationStatus.PENDING,
+        ...(verificationDocumentUrl !== undefined && {
+          verificationDocumentUrl,
+        }),
+      },
+      select: {
+        id: true,
+        verificationStatus: true,
+        verificationDocumentUrl: true,
+      },
+    });
+  }
+
+  async getTeamMembers(employerUserId: string) {
+    const employer = await this.prisma.employerProfile.findUnique({
+      where: { userId: employerUserId },
+      select: { id: true },
+    });
+    if (!employer) throw new NotFoundException('Employer profile not found');
+
+    return this.prisma.employerTeamMember.findMany({
+      where: { employerId: employer.id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: { invitedAt: 'desc' },
+    });
+  }
+
+  async updateTeamMemberRole(
+    employerUserId: string,
+    teamMemberId: string,
+    role: TeamMemberRole,
+  ) {
+    const employer = await this.prisma.employerProfile.findUnique({
+      where: { userId: employerUserId },
+      select: { id: true },
+    });
+    if (!employer) throw new NotFoundException('Employer profile not found');
+
+    const member = await this.prisma.employerTeamMember.findUnique({
+      where: { id: teamMemberId },
+      select: { id: true, employerId: true },
+    });
+    if (!member) throw new NotFoundException('Team member not found');
+    if (member.employerId !== employer.id) throw new ForbiddenException();
+
+    return this.prisma.employerTeamMember.update({
+      where: { id: teamMemberId },
+      data: { role },
+      include: { user: { select: { id: true, email: true } } },
+    });
+  }
+
+  async removeTeamMember(employerUserId: string, teamMemberId: string) {
+    const employer = await this.prisma.employerProfile.findUnique({
+      where: { userId: employerUserId },
+      select: { id: true },
+    });
+    if (!employer) throw new NotFoundException('Employer profile not found');
+
+    const member = await this.prisma.employerTeamMember.findUnique({
+      where: { id: teamMemberId },
+      select: { id: true, employerId: true },
+    });
+    if (!member) throw new NotFoundException('Team member not found');
+    if (member.employerId !== employer.id) throw new ForbiddenException();
+
+    await this.prisma.employerTeamMember.delete({ where: { id: teamMemberId } });
+    return { removed: true, id: teamMemberId };
   }
 }

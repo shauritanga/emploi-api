@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { NotificationProcessor } from './processor/notification.processor';
 import { AntiGhostingProcessor } from './processor/ant-ghosting.processor';
+import { NotificationsService } from './notifications.service';
+import { NotificationsController } from './notifications.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { ApplicationsModule } from '../applications/applications.module';
 import { QueueName } from 'src/common/enums';
@@ -15,7 +17,12 @@ import { QueueName } from 'src/common/enums';
       { name: QueueName.ANTI_GHOSTING },
     ),
   ],
-  providers: [NotificationProcessor, AntiGhostingProcessor],
-  exports: [NotificationProcessor, AntiGhostingProcessor],
+  controllers: [NotificationsController],
+  providers: [
+    NotificationProcessor,
+    AntiGhostingProcessor,
+    NotificationsService,
+  ],
+  exports: [NotificationProcessor, AntiGhostingProcessor, NotificationsService],
 })
 export class NotificationsModule {}

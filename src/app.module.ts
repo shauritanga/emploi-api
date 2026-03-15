@@ -23,6 +23,8 @@ import { RatingsModule } from './modules/ratings/ratings.module';
 import { EmployerProfileModule } from './modules/employer-profile/employer-profile.module';
 import { SeekerProfileModule } from './modules/seeker-profile/seeker-profile.module';
 import { ApplicationsModule } from './modules/applications/applications.module';
+import { OffersModule } from './modules/offers/offers.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
@@ -65,6 +67,8 @@ import { ApplicationsModule } from './modules/applications/applications.module';
     NotificationsModule,
     CommunityModule,
     InterviewsModule,
+    OffersModule,
+    SearchModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

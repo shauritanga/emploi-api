@@ -5,6 +5,7 @@ export {
   JobType,
   ExperienceLevel,
   NotificationType,
+  QuestionType,
 } from '@prisma/client';
 
 export enum QueueName {

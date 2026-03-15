@@ -9,9 +9,36 @@ import {
   IsDateString,
   IsNotEmpty,
   Max,
+  ValidateNested,
+  ArrayMinSize,
+  ArrayMaxSize,
+  ValidateIf,
 } from 'class-validator';
-import { JobType, JobStatus, ExperienceLevel } from '../../../common/enums';
+import {
+  JobType,
+  JobStatus,
+  ExperienceLevel,
+  QuestionType,
+} from '../../../common/enums';
 import { Type } from 'class-transformer';
+
+export class ScreeningQuestionDto {
+  @IsString() @IsNotEmpty() question: string;
+
+  @IsOptional()
+  @IsEnum(QuestionType)
+  questionType?: QuestionType;
+
+  @IsOptional() @IsArray() options?: string[];
+
+  @IsOptional() @IsBoolean() isRequired?: boolean;
+
+  @IsOptional() @IsBoolean() isKnockout?: boolean;
+
+  @IsOptional() @IsString() correctOption?: string;
+
+  @IsOptional() @IsInt() @Min(0) displayOrder?: number;
+}
 
 export class CreateJobDto {
   @IsString() @IsNotEmpty() title: string;
@@ -35,6 +62,13 @@ export class CreateJobDto {
   @IsBoolean() isStreamlinedHiring: boolean;
   @IsOptional() @IsDateString() applicationDeadline?: string;
   @IsOptional() @IsInt() @Min(1) maxApplicants?: number;
+
+  @Type(() => ScreeningQuestionDto)
+  @IsArray()
+  @ArrayMinSize(3, { message: 'Minimum 3 screening questions required' })
+  @ArrayMaxSize(6, { message: 'Maximum 6 screening questions allowed' })
+  @ValidateNested({ each: true })
+  screeningQuestions: ScreeningQuestionDto[];
 }
 
 export class UpdateJobDto {
@@ -47,6 +81,14 @@ export class UpdateJobDto {
   @IsOptional() @IsInt() @Min(0) salaryMax?: number;
   @IsOptional() @IsBoolean() isStreamlinedHiring?: boolean;
   @IsOptional() @IsDateString() applicationDeadline?: string;
+
+  @IsOptional()
+  @Type(() => ScreeningQuestionDto)
+  @IsArray()
+  @ArrayMinSize(3, { message: 'Minimum 3 screening questions required' })
+  @ArrayMaxSize(6, { message: 'Maximum 6 screening questions allowed' })
+  @ValidateNested({ each: true })
+  screeningQuestions?: ScreeningQuestionDto[];
 }
 
 export class JobQueryDto {
