@@ -85,7 +85,11 @@ export class CommunityController {
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
     @Body() dto: UpdatePostDto,
   ) {
-    return this.communityService.updatePost(user.sub, postId, dto.content ?? '');
+    return this.communityService.updatePost(
+      user.sub,
+      postId,
+      dto.content ?? '',
+    );
   }
 
   @Delete('posts/:postId')
@@ -114,7 +118,11 @@ export class CommunityController {
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
     @Body() dto: UpdateReplyDto,
   ) {
-    return this.communityService.updateReply(user.sub, replyId, dto.content ?? '');
+    return this.communityService.updateReply(
+      user.sub,
+      replyId,
+      dto.content ?? '',
+    );
   }
 
   @Delete('replies/:replyId')

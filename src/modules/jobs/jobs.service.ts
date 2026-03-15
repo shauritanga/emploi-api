@@ -135,7 +135,14 @@ export class JobsService {
           hasSome: query.skills.split(',').map((s) => s.trim()),
         },
       }),
-      applicationDeadline: { gt: new Date() },
+      AND: [
+        {
+          OR: [
+            { applicationDeadline: null },
+            { applicationDeadline: { gt: new Date() } },
+          ],
+        },
+      ],
     };
 
     const [jobs, total] = await Promise.all([

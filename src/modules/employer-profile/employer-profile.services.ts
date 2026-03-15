@@ -245,7 +245,9 @@ export class EmployerProfileService {
     if (!member) throw new NotFoundException('Team member not found');
     if (member.employerId !== employer.id) throw new ForbiddenException();
 
-    await this.prisma.employerTeamMember.delete({ where: { id: teamMemberId } });
+    await this.prisma.employerTeamMember.delete({
+      where: { id: teamMemberId },
+    });
     return { removed: true, id: teamMemberId };
   }
 }

@@ -43,6 +43,7 @@ export class ScreeningQuestionDto {
 export class CreateJobDto {
   @IsString() @IsNotEmpty() title: string;
   @IsString() @IsNotEmpty() description: string;
+  @IsOptional() @IsString() responsibilities?: string;
   @IsOptional() @IsString() requirements?: string;
   @IsOptional() @IsString() benefits?: string;
   @IsOptional() @IsString() locationCountry?: string;
@@ -74,6 +75,7 @@ export class CreateJobDto {
 export class UpdateJobDto {
   @IsOptional() @IsString() title?: string;
   @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() responsibilities?: string;
   @IsOptional() @IsString() requirements?: string;
   @IsOptional() @IsString() benefits?: string;
   @IsOptional() @IsEnum(JobStatus) status?: JobStatus;

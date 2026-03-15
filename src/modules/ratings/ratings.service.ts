@@ -235,7 +235,9 @@ export class RatingsService {
     userId: string,
     dto: { scores?: Record<string, number>; reviewText?: string },
   ) {
-    const rating = await this.prisma.rating.findUnique({ where: { id: ratingId } });
+    const rating = await this.prisma.rating.findUnique({
+      where: { id: ratingId },
+    });
     if (!rating) throw new NotFoundException('Rating not found');
     if (rating.raterId !== userId) throw new ForbiddenException();
 
@@ -267,7 +269,9 @@ export class RatingsService {
   }
 
   async deleteRating(ratingId: string, userId: string) {
-    const rating = await this.prisma.rating.findUnique({ where: { id: ratingId } });
+    const rating = await this.prisma.rating.findUnique({
+      where: { id: ratingId },
+    });
     if (!rating) throw new NotFoundException('Rating not found');
     if (rating.raterId !== userId) throw new ForbiddenException();
 

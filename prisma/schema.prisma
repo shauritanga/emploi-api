@@ -415,6 +415,7 @@ model Job {
   employerId          String
   title               String
   description         String
+  responsibilities    String?
   requirements        String?
   benefits            String?
   locationCountry     String?
