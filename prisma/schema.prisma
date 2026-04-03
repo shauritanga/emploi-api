@@ -220,7 +220,7 @@ model SeekerProfile {
   isOpenToRelocation     Boolean            @default(false)
   salaryExpectationMin   Int?
   salaryExpectationMax   Int?
-  salaryCurrency         String             @default("USD")
+  salaryCurrency         String             @default("TZS")
   profileCompletionScore Int                @default(0)
   isProfilePublic        Boolean            @default(true)
   aggregateRating        Decimal            @default(0) @db.Decimal(3, 2)
