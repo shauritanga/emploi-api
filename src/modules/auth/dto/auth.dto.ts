@@ -5,6 +5,8 @@ import {
   IsEnum,
   IsOptional,
   IsNotEmpty,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { UserRole } from 'src/common/enums';
 
@@ -26,6 +28,32 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   companyName?: string;
+
+  @IsOptional()
+  @IsString()
+  locationCity?: string;
+
+  @IsOptional()
+  @IsString()
+  locationCountry?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  salaryExpectationMin?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  salaryExpectationMax?: number;
+
+  @IsOptional()
+  @IsString()
+  salaryCurrency?: string;
+
+  @IsOptional()
+  @IsString()
+  companySize?: string;
 }
 
 export class LoginDto {

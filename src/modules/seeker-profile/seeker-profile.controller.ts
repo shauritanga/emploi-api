@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -17,6 +18,12 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { randomUUID } from 'crypto';
+import { existsSync, mkdirSync } from 'fs';
+import type { Request } from 'express';
+import type { FileFilterCallback } from 'multer';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
 import { SeekerProfileService } from './seeker-profile.service';
 import {
   UpdateSeekerProfileDto,
@@ -32,6 +39,85 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import * as currentUserDecorator from '../../common/decorators/current-user.decorator';
 import { UserRole } from 'src/common/enums';
 import { Public } from 'src/common/decorators/puplic.decorator';
+
+const uploadRootDir = process.env.UPLOAD_DIR ?? join(process.cwd(), 'uploads');
+const photosDir = join(uploadRootDir, 'photos');
+const videosDir = join(uploadRootDir, 'videos');
+
+const allowedPhotoMimeTypes = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
+
+const allowedVideoMimeTypes = new Set([
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+]);
+
+function ensureDirectoryExists(dir: string) {
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+}
+
+function buildSafeFilename(originalName: string) {
+  const extension = extname(originalName || '').toLowerCase();
+  return `${Date.now()}-${randomUUID()}${extension}`;
+}
+
+const photoUploadOptions = {
+  storage: diskStorage({
+    destination: (_req, _file, callback) => {
+      ensureDirectoryExists(photosDir);
+      callback(null, photosDir);
+    },
+    filename: (_req, file, callback) => {
+      callback(null, buildSafeFilename(file.originalname));
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (
+    _req: Request,
+    file: Express.Multer.File,
+    callback: FileFilterCallback,
+  ) => {
+    if (!allowedPhotoMimeTypes.has(file.mimetype)) {
+      callback(
+        new BadRequestException('Only JPG, PNG, and WEBP images are allowed'),
+      );
+      return;
+    }
+    callback(null, true);
+  },
+};
+
+const videoUploadOptions = {
+  storage: diskStorage({
+    destination: (_req, _file, callback) => {
+      ensureDirectoryExists(videosDir);
+      callback(null, videosDir);
+    },
+    filename: (_req, file, callback) => {
+      callback(null, buildSafeFilename(file.originalname));
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter: (
+    _req: Request,
+    file: Express.Multer.File,
+    callback: FileFilterCallback,
+  ) => {
+    if (!allowedVideoMimeTypes.has(file.mimetype)) {
+      callback(
+        new BadRequestException('Only MP4, MOV, and WEBM videos are allowed'),
+      );
+      return;
+    }
+    callback(null, true);
+  },
+};
 
 @ApiTags('Seeker Profile')
 @ApiBearerAuth()
@@ -169,7 +255,7 @@ export class SeekerProfileController {
 
   @Patch('me/photo')
   @Roles(UserRole.SEEKER, UserRole.BOTH)
-  @UseInterceptors(FileInterceptor('photo'))
+  @UseInterceptors(FileInterceptor('photo', photoUploadOptions))
   uploadPhoto(
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
     @UploadedFile() file: Express.Multer.File,
@@ -179,7 +265,7 @@ export class SeekerProfileController {
 
   @Patch('me/video-intro')
   @Roles(UserRole.SEEKER, UserRole.BOTH)
-  @UseInterceptors(FileInterceptor('video'))
+  @UseInterceptors(FileInterceptor('video', videoUploadOptions))
   uploadVideoIntro(
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
     @UploadedFile() file: Express.Multer.File,

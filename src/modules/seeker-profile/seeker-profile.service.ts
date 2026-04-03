@@ -1,8 +1,11 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { existsSync, unlinkSync } from 'fs';
+import { join, resolve } from 'path';
 import { AvailabilityStatus } from '@prisma/client';
 import {
   UpdateSeekerProfileDto,
@@ -17,6 +20,10 @@ import { PrismaService } from 'src/prisma/prisma.services';
 @Injectable()
 export class SeekerProfileService {
   constructor(private prisma: PrismaService) {}
+
+  private readonly uploadRootDir = resolve(
+    process.env.UPLOAD_DIR ?? join(process.cwd(), 'uploads'),
+  );
 
   async getProfile(seekerUserId: string) {
     const profile = await this.prisma.seekerProfile.findUnique({
@@ -195,22 +202,52 @@ export class SeekerProfileService {
     return { message: 'Certification deleted' };
   }
 
-  async updatePhoto(seekerUserId: string, file: { originalname: string }) {
-    // TODO: Upload to S3 and get URL
-    const profilePhotoUrl = `https://uploads.emploi.com/photos/${file.originalname}`;
-    return this.prisma.seekerProfile.update({
+  async updatePhoto(seekerUserId: string, file: Express.Multer.File) {
+    if (!file?.filename) {
+      throw new BadRequestException('Photo file is required');
+    }
+
+    const existingProfile = await this.prisma.seekerProfile.findUnique({
+      where: { userId: seekerUserId },
+      select: { profilePhotoUrl: true },
+    });
+
+    if (!existingProfile) {
+      throw new NotFoundException('Seeker profile not found');
+    }
+
+    const profilePhotoUrl = `/uploads/photos/${file.filename}`;
+    const updated = await this.prisma.seekerProfile.update({
       where: { userId: seekerUserId },
       data: { profilePhotoUrl },
     });
+
+    this.removeLocalUpload(existingProfile.profilePhotoUrl);
+    return updated;
   }
 
-  async updateVideoIntro(seekerUserId: string, file: { originalname: string }) {
-    // TODO: Upload to S3 and get URL
-    const videoIntroUrl = `https://uploads.emploi.com/videos/${file.originalname}`;
-    return this.prisma.seekerProfile.update({
+  async updateVideoIntro(seekerUserId: string, file: Express.Multer.File) {
+    if (!file?.filename) {
+      throw new BadRequestException('Video file is required');
+    }
+
+    const existingProfile = await this.prisma.seekerProfile.findUnique({
+      where: { userId: seekerUserId },
+      select: { videoIntroUrl: true },
+    });
+
+    if (!existingProfile) {
+      throw new NotFoundException('Seeker profile not found');
+    }
+
+    const videoIntroUrl = `/uploads/videos/${file.filename}`;
+    const updated = await this.prisma.seekerProfile.update({
       where: { userId: seekerUserId },
       data: { videoIntroUrl },
     });
+
+    this.removeLocalUpload(existingProfile.videoIntroUrl);
+    return updated;
   }
 
   async searchSeekers(query: SeekerSearchDto) {
@@ -297,5 +334,23 @@ export class SeekerProfileService {
     if (profile.availabilityStatus !== AvailabilityStatus.NOT_LOOKING)
       score += 15;
     return Math.min(score, 100);
+  }
+
+  private removeLocalUpload(fileUrl: string | null | undefined) {
+    if (!fileUrl || !fileUrl.startsWith('/uploads/')) {
+      return;
+    }
+
+    const relativePath = fileUrl.replace('/uploads/', '');
+    const absolutePath = resolve(this.uploadRootDir, relativePath);
+
+    // Prevent path traversal when resolving persisted URLs.
+    if (!absolutePath.startsWith(this.uploadRootDir)) {
+      return;
+    }
+
+    if (existsSync(absolutePath)) {
+      unlinkSync(absolutePath);
+    }
   }
 }

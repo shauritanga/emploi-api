@@ -60,13 +60,27 @@ export class AuthService {
 
       if (dto.role === UserRole.SEEKER || dto.role === UserRole.BOTH) {
         await tx.seekerProfile.create({
-          data: { userId: newUser.id, fullName: dto.fullName },
+          data: {
+            userId: newUser.id,
+            fullName: dto.fullName,
+            ...(dto.locationCity && { locationCity: dto.locationCity }),
+            ...(dto.locationCountry && { locationCountry: dto.locationCountry }),
+            ...(dto.salaryExpectationMin != null && { salaryExpectationMin: dto.salaryExpectationMin }),
+            ...(dto.salaryExpectationMax != null && { salaryExpectationMax: dto.salaryExpectationMax }),
+            ...(dto.salaryCurrency && { salaryCurrency: dto.salaryCurrency }),
+          },
         });
       }
 
       if (dto.role === UserRole.EMPLOYER || dto.role === UserRole.BOTH) {
         await tx.employerProfile.create({
-          data: { userId: newUser.id, companyName: dto.companyName! },
+          data: {
+            userId: newUser.id,
+            companyName: dto.companyName!,
+            ...(dto.locationCity && { locationCity: dto.locationCity }),
+            ...(dto.locationCountry && { locationCountry: dto.locationCountry }),
+            ...(dto.companySize && { companySize: dto.companySize }),
+          },
         });
       }
 
@@ -104,7 +118,7 @@ export class AuthService {
   }
 
   async refresh(userId: string, incomingRefreshToken: string) {
-    const stored = await this.redis.get(`refresh:${userId}`);
+    const stored = await this.safeRedisGet(`refresh:${userId}`);
     if (!stored || stored !== incomingRefreshToken) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -119,12 +133,12 @@ export class AuthService {
   }
 
   async logout(userId: string) {
-    await this.redis.del(`refresh:${userId}`);
+    await this.safeRedisDel(`refresh:${userId}`);
     return { message: 'Logged out successfully' };
   }
 
   async verifyEmail(token: string) {
-    const userId = await this.redis.get(`verify:${token}`);
+    const userId = await this.safeRedisGet(`verify:${token}`);
     if (!userId)
       throw new BadRequestException('Invalid or expired verification token');
 
@@ -133,7 +147,7 @@ export class AuthService {
       data: { isEmailVerified: true, emailVerificationToken: null },
     });
 
-    await this.redis.del(`verify:${token}`);
+    await this.safeRedisDel(`verify:${token}`);
     return { message: 'Email verified successfully' };
   }
 
@@ -151,14 +165,14 @@ export class AuthService {
       data: { passwordResetToken: token, passwordResetExpires: expires },
     });
 
-    await this.redis.set(`reset:${token}`, user.id, 'EX', 3600);
+    await this.safeRedisSet(`reset:${token}`, user.id, 3600);
     // TODO: emit email event here
 
     return { message: 'If that email exists, a reset link has been sent' };
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const userId = await this.redis.get(`reset:${dto.token}`);
+    const userId = await this.safeRedisGet(`reset:${dto.token}`);
     if (!userId)
       throw new BadRequestException('Invalid or expired reset token');
 
@@ -173,7 +187,7 @@ export class AuthService {
     });
 
     // Invalidate all sessions
-    await this.redis.del(`reset:${dto.token}`, `refresh:${userId}`);
+    await this.safeRedisDel(`reset:${dto.token}`, `refresh:${userId}`);
     return { message: 'Password reset successfully' };
   }
 
@@ -191,7 +205,7 @@ export class AuthService {
     });
 
     // Force re-login
-    await this.redis.del(`refresh:${userId}`);
+    await this.safeRedisDel(`refresh:${userId}`);
     return { message: 'Password changed successfully' };
   }
 
@@ -213,8 +227,40 @@ export class AuthService {
       }),
     ]);
 
-    await this.redis.set(`refresh:${userId}`, refreshToken, 'EX', 604800); // 7 days
+    await this.safeRedisSet(`refresh:${userId}`, refreshToken, 604800); // 7 days
 
     return { accessToken, refreshToken, role };
+  }
+
+  private async safeRedisGet(key: string): Promise<string | null> {
+    try {
+      return await this.redis.get(key);
+    } catch (err) {
+      console.warn(`Redis GET failed for key ${key}`);
+      return null;
+    }
+  }
+
+  private async safeRedisSet(
+    key: string,
+    value: string,
+    ttlSeconds: number,
+  ): Promise<boolean> {
+    try {
+      await this.redis.set(key, value, 'EX', ttlSeconds);
+      return true;
+    } catch (err) {
+      console.warn(`Redis SET failed for key ${key}`);
+      return false;
+    }
+  }
+
+  private async safeRedisDel(...keys: string[]): Promise<number> {
+    try {
+      return await this.redis.del(...keys);
+    } catch (err) {
+      console.warn(`Redis DEL failed for keys ${keys.join(',')}`);
+      return 0;
+    }
   }
 }
