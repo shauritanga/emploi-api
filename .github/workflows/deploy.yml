@@ -27,4 +27,4 @@ jobs:
             npm install
             npx prisma migrate deploy
             npm run build
-            su - emploi -c 'source /root/.nvm/nvm.sh && pm2 reload emploi-api'
+            su - emploi -c 'source /home/emploi/.nvm/nvm.sh && pm2 reload emploi-api'
