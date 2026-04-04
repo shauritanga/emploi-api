@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import bull from 'bull';
+import { Prisma } from '@prisma/client';
 import { QueueName } from '../../common/enums';
 import { PrismaService } from 'src/prisma/prisma.services';
 import { CreateCvDto, UpdateCvDto } from './dto/cv.dto';
@@ -63,7 +64,7 @@ export class CvService {
         seekerId: seeker.id,
         templateId: dto.templateId,
         title: dto.title,
-        contentJson,
+        contentJson: contentJson ?? Prisma.JsonNull,
         isDefault: dto.isDefault ?? false,
         isPublic: dto.isPublic ?? false,
       },
