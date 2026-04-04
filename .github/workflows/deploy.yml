@@ -20,11 +20,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            bash -lc '
-              cd /var/www/emploi-api
-              git pull origin main
-              npm install
-              npx prisma migrate deploy
-              npm run build
-              pm2 reload emploi-api
-            '
+            cd /var/www/emploi-api
+            git pull origin main
+            npm install
+            npx prisma migrate deploy
+            npm run build
+            pm2 reload emploi-api
