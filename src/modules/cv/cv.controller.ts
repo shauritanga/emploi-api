@@ -8,6 +8,7 @@ import {
   Param,
   UseGuards,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -93,11 +94,22 @@ export class CvController {
   }
 
   @Get(':id/download')
-  @ApiOperation({ summary: 'Download CV as PDF' })
+  @ApiOperation({ summary: 'Get CV download info (PDF URL + status)' })
   async downloadCv(
     @Param('id', ParseUUIDPipe) id: string,
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
   ) {
     return this.cvService.getDownloadInfo(id, user.sub);
+  }
+
+  @Get(':cvId/match/:jobId')
+  @Roles(UserRole.SEEKER, UserRole.BOTH)
+  @ApiOperation({ summary: 'Compute job match score for a CV' })
+  async getMatchScore(
+    @Param('cvId', ParseUUIDPipe) cvId: string,
+    @Param('jobId', ParseUUIDPipe) jobId: string,
+    @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
+  ) {
+    return this.cvService.computeJobMatchScore(cvId, jobId, user.sub);
   }
 }

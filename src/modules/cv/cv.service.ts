@@ -2,19 +2,12 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
-  Inject,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import bull from 'bull';
 import { QueueName } from '../../common/enums';
 import { PrismaService } from 'src/prisma/prisma.services';
-
-export class CreateCvDto {
-  title: string;
-  templateId?: string;
-  isDefault?: boolean;
-  isPublic?: boolean;
-}
+import { CreateCvDto, UpdateCvDto } from './dto/cv.dto';
 
 @Injectable()
 export class CvService {
@@ -24,16 +17,39 @@ export class CvService {
   ) {}
 
   async create(seekerUserId: string, dto: CreateCvDto) {
+    const needsProfileSnapshot =
+      !dto.contentJson || Object.keys(dto.contentJson).length === 0;
+
     const seeker = await this.prisma.seekerProfile.findUnique({
       where: { userId: seekerUserId },
-      include: {
-        experiences: { orderBy: { displayOrder: 'asc' } },
-        education: { orderBy: { displayOrder: 'asc' } },
-        skills: true,
-        certifications: true,
-      },
+      ...(needsProfileSnapshot && {
+        include: {
+          experiences: { orderBy: { displayOrder: 'asc' } },
+          education: { orderBy: { displayOrder: 'asc' } },
+          skills: true,
+          certifications: true,
+        },
+      }),
     });
     if (!seeker) throw new NotFoundException('Seeker profile not found');
+
+    const contentJson = needsProfileSnapshot
+      ? {
+          personalInfo: {
+            fullName: seeker.fullName,
+            headline: seeker.headline,
+            phone: seeker.phone,
+            bio: seeker.bio,
+            location: seeker.locationIsPublic
+              ? `${seeker.locationCity}, ${seeker.locationCountry}`
+              : seeker.locationCountry,
+          },
+          experiences: (seeker as any).experiences ?? [],
+          education: (seeker as any).education ?? [],
+          skills: (seeker as any).skills ?? [],
+          certifications: (seeker as any).certifications ?? [],
+        }
+      : dto.contentJson;
 
     if (dto.isDefault) {
       await this.prisma.cv.updateMany({
@@ -47,21 +63,7 @@ export class CvService {
         seekerId: seeker.id,
         templateId: dto.templateId,
         title: dto.title,
-        contentJson: {
-          personalInfo: {
-            fullName: seeker.fullName,
-            headline: seeker.headline,
-            phone: seeker.phone,
-            bio: seeker.bio,
-            location: seeker.locationIsPublic
-              ? `${seeker.locationCity}, ${seeker.locationCountry}`
-              : seeker.locationCountry,
-          },
-          experiences: seeker.experiences,
-          education: seeker.education,
-          skills: seeker.skills,
-          certifications: seeker.certifications,
-        },
+        contentJson,
         isDefault: dto.isDefault ?? false,
         isPublic: dto.isPublic ?? false,
       },
@@ -104,7 +106,7 @@ export class CvService {
   async update(
     cvId: string,
     seekerUserId: string,
-    dto: { title?: string; isDefault?: boolean; isPublic?: boolean },
+    dto: UpdateCvDto,
   ) {
     const cv = await this.prisma.cv.findUnique({
       where: { id: cvId },
@@ -126,6 +128,7 @@ export class CvService {
         ...(dto.title !== undefined && { title: dto.title }),
         ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
         ...(dto.isPublic !== undefined && { isPublic: dto.isPublic }),
+        ...(dto.contentJson !== undefined && { contentJson: dto.contentJson }),
       },
     });
   }

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, IsObject } from 'class-validator';
 
 export class CreateCvDto {
   @IsString()
@@ -15,6 +15,10 @@ export class CreateCvDto {
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  contentJson?: Record<string, any>;
 }
 
 export class UpdateCvDto {
@@ -29,4 +33,8 @@ export class UpdateCvDto {
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  contentJson?: Record<string, any>;
 }
