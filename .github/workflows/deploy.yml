@@ -27,4 +27,4 @@ jobs:
             npx prisma migrate deploy
             npm run build
             pm2 reload emploi-api
-          '
+           '
