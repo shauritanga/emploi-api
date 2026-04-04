@@ -21,9 +21,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             source /root/.nvm/nvm.sh
+            git config --global --add safe.directory /var/www/emploi-api
             cd /var/www/emploi-api
             git pull origin main
             npm install
             npx prisma migrate deploy
             npm run build
-            pm2 reload emploi-api
+            su - emploi -c 'pm2 reload emploi-api'
