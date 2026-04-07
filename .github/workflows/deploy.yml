@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_COMMIT_SHA: ${{ github.sha }}
-      BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.run_id }}
+      BUILD_TIMESTAMP: ${{ github.run_id }}
 
     steps:
       - name: Checkout code
@@ -24,10 +24,13 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs: BUILD_COMMIT_SHA,BUILD_TIMESTAMP
           script: |
+            set -e
             source /root/.nvm/nvm.sh
             git config --global --add safe.directory /var/www/emploi-api
             cd /var/www/emploi-api
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             npm install
             npx prisma migrate deploy
             npm run build
@@ -38,7 +41,7 @@ jobs:
             fi
             echo "BUILD_COMMIT_SHA=${BUILD_COMMIT_SHA}" >> .env
             echo "BUILD_TIMESTAMP=${BUILD_TIMESTAMP}" >> .env
-            echo "APP_VERSION=$(node -p \"require('./package.json').version\")" >> .env
+            node -e "console.log('APP_VERSION=' + require('./package.json').version)" >> .env
             su - emploi -c 'source /home/emploi/.nvm/nvm.sh && cd /var/www/emploi-api && pm2 reload emploi-api --update-env'
 
       - name: Verify live apply schema contract
@@ -49,5 +52,23 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             set -e
-            docs_json=$(curl -fsS http://127.0.0.1:3000/api/docs-json)
-            node -e "const doc=JSON.parse(process.argv[1]);const schema=doc.paths?.['/api/v1/applications/jobs/{jobId}']?.post?.requestBody?.content?.['application/json']?.schema;const ref=schema?.['$ref'];if(!ref){throw new Error('Apply request schema ref missing');}const name=ref.split('/').pop();const dto=doc.components?.schemas?.[name];const props=dto?.properties??{};for(const k of ['cvId','coverLetter','screeningAnswers']){if(!(k in props)){throw new Error('Missing apply key in live schema: '+k);}}console.log('Live apply schema verified for keys:',Object.keys(props));" "$docs_json"
+            source /root/.nvm/nvm.sh
+            curl -fsS http://127.0.0.1:3000/api/docs-json > /tmp/emploi-docs.json
+            node <<'NODE'
+            const fs = require('fs');
+            const doc = JSON.parse(fs.readFileSync('/tmp/emploi-docs.json', 'utf8'));
+            const schema = doc.paths?.['/api/v1/applications/jobs/{jobId}']?.post?.requestBody?.content?.['application/json']?.schema;
+            const ref = schema?.$ref;
+            if (!ref) {
+              throw new Error('Apply request schema ref missing');
+            }
+            const name = ref.split('/').pop();
+            const dto = doc.components?.schemas?.[name];
+            const props = dto?.properties ?? {};
+            for (const key of ['cvId', 'coverLetter', 'screeningAnswers']) {
+              if (!(key in props)) {
+                throw new Error(`Missing apply key in live schema: ${key}`);
+              }
+            }
+            console.log('Live apply schema verified for keys:', Object.keys(props));
+            NODE
