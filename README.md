@@ -85,6 +85,30 @@ After deploy/restart, verify the applications payload contract is accepted:
 
 If you see `property <field> should not exist`, treat it as a build/runtime contract mismatch and redeploy from fresh build artifacts.
 
+Verify that the live runtime is on the expected build:
+
+```bash
+curl -s http://127.0.0.1:3000/api/v1/version
+```
+
+Expected fields in response:
+
+- `appVersion`
+- `commitSha`
+- `buildTimestamp`
+
+Verify apply contract keys from the live docs payload:
+
+```bash
+curl -s http://127.0.0.1:3000/api/docs-json | jq '.components.schemas.CreateApplicationDto.properties | keys'
+```
+
+Expected keys include:
+
+- `cvId`
+- `coverLetter`
+- `screeningAnswers`
+
 If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
 
 ```bash

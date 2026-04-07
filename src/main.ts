@@ -9,6 +9,7 @@ import { join, resolve } from 'path';
 import { AppModule } from './app.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { getBuildInfo } from './common/utils/build-info';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -60,9 +61,13 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
+  const buildInfo = getBuildInfo();
   logger.log(`🚀 Emploi API running on port ${port}`);
   logger.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`📁 Uploads dir: ${uploadRootDir}`);
+  logger.log(
+    `🧩 Build: ${buildInfo.appVersion} (${buildInfo.commitSha}) at ${buildInfo.buildTimestamp}`,
+  );
 }
 
 bootstrap();

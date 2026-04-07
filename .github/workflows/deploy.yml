@@ -8,6 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      BUILD_COMMIT_SHA: ${{ github.sha }}
+      BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.run_id }}
 
     steps:
       - name: Checkout code
@@ -19,6 +22,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          envs: BUILD_COMMIT_SHA,BUILD_TIMESTAMP
           script: |
             source /root/.nvm/nvm.sh
             git config --global --add safe.directory /var/www/emploi-api
@@ -27,4 +31,23 @@ jobs:
             npm install
             npx prisma migrate deploy
             npm run build
-            su - emploi -c 'source /home/emploi/.nvm/nvm.sh && pm2 reload emploi-api'
+            if [ -f .env ]; then
+              sed -i '/^BUILD_COMMIT_SHA=/d' .env
+              sed -i '/^BUILD_TIMESTAMP=/d' .env
+              sed -i '/^APP_VERSION=/d' .env
+            fi
+            echo "BUILD_COMMIT_SHA=${BUILD_COMMIT_SHA}" >> .env
+            echo "BUILD_TIMESTAMP=${BUILD_TIMESTAMP}" >> .env
+            echo "APP_VERSION=$(node -p \"require('./package.json').version\")" >> .env
+            su - emploi -c 'source /home/emploi/.nvm/nvm.sh && cd /var/www/emploi-api && pm2 reload emploi-api --update-env'
+
+      - name: Verify live apply schema contract
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            docs_json=$(curl -fsS http://127.0.0.1:3000/api/docs-json)
+            node -e "const doc=JSON.parse(process.argv[1]);const schema=doc.paths?.['/api/v1/applications/jobs/{jobId}']?.post?.requestBody?.content?.['application/json']?.schema;const ref=schema?.['$ref'];if(!ref){throw new Error('Apply request schema ref missing');}const name=ref.split('/').pop();const dto=doc.components?.schemas?.[name];const props=dto?.properties??{};for(const k of ['cvId','coverLetter','screeningAnswers']){if(!(k in props)){throw new Error('Missing apply key in live schema: '+k);}}console.log('Live apply schema verified for keys:',Object.keys(props));" "$docs_json"
