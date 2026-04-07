@@ -1,4 +1,5 @@
 import { Transform } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 type ScreeningAnswerArrayItem = {
@@ -27,15 +28,28 @@ const normalizeScreeningAnswers = (value: unknown): unknown => {
 };
 
 export class CreateApplicationDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'CV ID to attach to this application',
+  })
   @IsOptional()
   @IsUUID()
   cvId?: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Optional cover letter text',
+  })
   @IsOptional()
   @IsString()
   coverLetter?: string;
 
   // Flutter sends a map {questionId: answer}; converted to array in the service
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    description: 'Screening answers keyed by questionId',
+  })
   @IsOptional()
   @Transform(({ value }) => normalizeScreeningAnswers(value))
   @IsObject()

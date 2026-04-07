@@ -56,16 +56,32 @@ export class ApplicationsService {
     if (existing)
       throw new BadRequestException('You have already applied to this job');
 
+    const rawScreeningAnswers = dto.screeningAnswers as unknown;
+    let screeningAnswersArray: { questionId: string; answer: string }[] = [];
     // Normalise screeningAnswers: accept both map {qId: answer} and array [{questionId, answer}]
-    const screeningAnswersArray: { questionId: string; answer: string }[] =
-      Array.isArray(dto.screeningAnswers)
-        ? dto.screeningAnswers
-        : Object.entries(dto.screeningAnswers ?? {}).map(
-            ([questionId, answer]) => ({
-              questionId,
-              answer: String(answer),
-            }),
-          );
+    if (Array.isArray(rawScreeningAnswers)) {
+      screeningAnswersArray = rawScreeningAnswers.map((item) => ({
+        questionId: String((item as { questionId?: unknown }).questionId ?? ''),
+        answer: String((item as { answer?: unknown }).answer ?? ''),
+      }));
+    } else if (
+      rawScreeningAnswers != null &&
+      typeof rawScreeningAnswers === 'object'
+    ) {
+      screeningAnswersArray = Object.entries(
+        rawScreeningAnswers as Record<string, unknown>,
+      ).map(([questionId, answer]) => ({
+        questionId,
+        answer: String(answer),
+      }));
+    } else if (rawScreeningAnswers != null) {
+      throw new BadRequestException(
+        'screeningAnswers must be an object or array',
+      );
+    }
+    screeningAnswersArray = screeningAnswersArray.filter(
+      (item) => item.questionId.trim().length > 0,
+    );
 
     // Validate required screening questions are answered
     const requiredQuestions = job.screeningQuestions.filter(
