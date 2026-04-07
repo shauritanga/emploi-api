@@ -25,6 +25,7 @@ import { SeekerProfileModule } from './modules/seeker-profile/seeker-profile.mod
 import { ApplicationsModule } from './modules/applications/applications.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { SearchModule } from './modules/search/search.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { SearchModule } from './modules/search/search.module';
     InterviewsModule,
     OffersModule,
     SearchModule,
+    PaymentsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
