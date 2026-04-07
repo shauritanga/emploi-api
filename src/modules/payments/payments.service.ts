@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ClickPesaCheckoutDto } from './dto/clickpesa-checkout.dto';
@@ -7,6 +7,13 @@ interface ClickPesaPaymentRecord {
   id: string;
   status: string;
   orderReference: string;
+  message?: string;
+}
+
+interface ClickPesaActiveMethod {
+  name: string;
+  status: 'AVAILABLE' | 'UNAVAILABLE';
+  fee?: number;
   message?: string;
 }
 
@@ -27,6 +34,7 @@ export class PaymentsService {
     this.apiKey = process.env.CLICKPESA_API_KEY ?? '';
   }
 
+  // Step 0: Generate and cache auth token (valid 1 hour, cached 55 min)
   private async getToken(): Promise<string> {
     if (this.cachedToken && new Date() < this.tokenExpiresAt) {
       return this.cachedToken;
@@ -35,7 +43,7 @@ export class PaymentsService {
     const response = await firstValueFrom(
       this.httpService.post(
         `${this.baseUrl}/third-parties/generate-token`,
-        {},
+        null,
         {
           headers: {
             'client-id': this.clientId,
@@ -46,87 +54,114 @@ export class PaymentsService {
     );
 
     const raw: string = response.data?.token ?? '';
-    // Strip the "Bearer " prefix if present — we'll add it back ourselves
     this.cachedToken = raw.replace(/^Bearer\s+/i, '');
-    // Cache for 55 minutes (token valid for 1 hour)
     this.tokenExpiresAt = new Date(Date.now() + 55 * 60 * 1000);
     return this.cachedToken;
   }
 
-  async initiateCheckout(dto: ClickPesaCheckoutDto) {
-    const orderRef = dto.orderReference ?? dto.reference;
-    // ClickPesa requires no '+' prefix on phone numbers
-    const phone = dto.phoneNumber.replace(/^\+/, '');
-
-    try {
-      const token = await this.getToken();
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.baseUrl}/third-parties/payments/initiate-ussd-push-request`,
-          {
-            amount: String(dto.amount),
-            currency: dto.currency,
-            orderReference: orderRef,
-            phoneNumber: phone,
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        ),
-      );
-
-      return {
-        sessionId: orderRef,
-        provider: 'clickpesa',
-        status: 'pending',
-        message: response.data?.message ?? 'Awaiting mobile money confirmation',
-      };
-    } catch (error) {
-      this.logger.error(
-        'ClickPesa checkout error:',
-        error?.response?.data ?? error?.message,
-      );
-      throw error;
-    }
+  // ClickPesa requires orderReference to be alphanumeric only
+  private sanitizeOrderRef(ref: string): string {
+    return ref.replace(/[^a-zA-Z0-9]/g, '');
   }
 
+  async initiateCheckout(dto: ClickPesaCheckoutDto) {
+    const orderRef = this.sanitizeOrderRef(dto.orderReference ?? dto.reference);
+    // ClickPesa requires no '+' prefix on phone numbers
+    const phone = dto.phoneNumber.replace(/^\+/, '');
+    const token = await this.getToken();
+
+    // Step 1: Preview — validate details and check payment method availability
+    const previewResponse = await firstValueFrom(
+      this.httpService.post(
+        `${this.baseUrl}/third-parties/payments/preview-ussd-push-request`,
+        {
+          amount: String(dto.amount),
+          currency: 'TZS',
+          orderReference: orderRef,
+          phoneNumber: phone,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      ),
+    );
+
+    const activeMethods: ClickPesaActiveMethod[] =
+      previewResponse.data?.activeMethods ?? [];
+    const availableMethod = activeMethods.find((m) => m.status === 'AVAILABLE');
+
+    if (!availableMethod) {
+      const reason =
+        activeMethods[0]?.message ??
+        'No payment methods available for this phone number';
+      this.logger.warn(`ClickPesa preview failed for ${phone}: ${reason}`);
+      throw new BadRequestException(reason);
+    }
+
+    this.logger.log(
+      `ClickPesa preview OK — method: ${availableMethod.name}, fee: ${availableMethod.fee ?? 0}`,
+    );
+
+    // Step 2: Initiate USSD push
+    const initiateResponse = await firstValueFrom(
+      this.httpService.post(
+        `${this.baseUrl}/third-parties/payments/initiate-ussd-push-request`,
+        {
+          amount: String(dto.amount),
+          currency: 'TZS',
+          orderReference: orderRef,
+          phoneNumber: phone,
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      ),
+    );
+
+    this.logger.log(
+      `ClickPesa USSD push initiated — orderRef: ${orderRef}, status: ${initiateResponse.data?.status}`,
+    );
+
+    return {
+      sessionId: orderRef,
+      provider: 'clickpesa',
+      status: 'pending',
+      message:
+        initiateResponse.data?.message ?? 'Awaiting mobile money confirmation',
+    };
+  }
+
+  // Step 3: Query payment status by orderReference
   async getSessionStatus(sessionId: string) {
-    try {
-      const token = await this.getToken();
-      const response = await firstValueFrom(
-        this.httpService.get(
-          `${this.baseUrl}/third-parties/payments/${sessionId}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        ),
-      );
+    const orderRef = this.sanitizeOrderRef(sessionId);
+    const token = await this.getToken();
 
-      const records: ClickPesaPaymentRecord[] = Array.isArray(response.data)
-        ? response.data
-        : response.data?.data ?? [];
+    const response = await firstValueFrom(
+      this.httpService.get(
+        `${this.baseUrl}/third-parties/payments/${orderRef}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      ),
+    );
 
-      const record = records.find(
-        (r) => r.orderReference === sessionId || r.id === sessionId,
+    const records: ClickPesaPaymentRecord[] = Array.isArray(response.data)
+      ? response.data
+      : response.data?.data ?? [];
+
+    const record =
+      records.find(
+        (r) => r.orderReference === orderRef || r.id === orderRef,
       ) ?? records[0];
 
-      const rawStatus = (record?.status ?? '').toUpperCase();
-      const status = this.mapStatus(rawStatus);
+    const rawStatus = (record?.status ?? '').toUpperCase();
+    const status = this.mapStatus(rawStatus);
 
-      return {
-        sessionId,
-        provider: 'clickpesa',
-        status,
-        transactionId: record?.id,
-        message: record?.message,
-      };
-    } catch (error) {
-      this.logger.error(
-        'ClickPesa status error:',
-        error?.response?.data ?? error?.message,
-      );
-      throw error;
-    }
+    this.logger.log(
+      `ClickPesa status — orderRef: ${orderRef}, status: ${rawStatus} → ${status}`,
+    );
+
+    return {
+      sessionId,
+      provider: 'clickpesa',
+      status,
+      transactionId: record?.id,
+      message: record?.message,
+    };
   }
 
   private mapStatus(
