@@ -8,6 +8,7 @@ import {
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { createHmac, timingSafeEqual } from 'crypto';
+import { AxiosError } from 'axios';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 import { PrismaService } from '../../prisma/prisma.services';
@@ -83,80 +84,138 @@ export class PaymentsService {
     return ref.replace(/[^a-zA-Z0-9]/g, '');
   }
 
+  private normalizeTzPhoneNumber(raw: string): string {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('255') && digits.length === 12) {
+      return digits;
+    }
+    if (digits.startsWith('0') && digits.length === 10) {
+      return `255${digits.substring(1)}`;
+    }
+    if (digits.length === 9 && digits.startsWith('6')) {
+      return `255${digits}`;
+    }
+    if (digits.length === 9 && digits.startsWith('7')) {
+      return `255${digits}`;
+    }
+
+    throw new BadRequestException(
+      'Invalid phone number. Use format 2557XXXXXXXX (or local 07XXXXXXXX).',
+    );
+  }
+
   private redisOrderKey(orderRef: string): string {
     return `payment:order:${orderRef}`;
   }
 
+  private toProviderException(error: unknown): BadRequestException {
+    if (error instanceof AxiosError) {
+      const responseData = error.response?.data as
+        | Record<string, unknown>
+        | undefined;
+      const messageValue = responseData?.message;
+      if (typeof messageValue === 'string' && messageValue.trim().length > 0) {
+        return new BadRequestException(messageValue.trim());
+      }
+      if (Array.isArray(messageValue)) {
+        const joined = messageValue
+          .map((item) => String(item).trim())
+          .filter((item) => item.length > 0)
+          .join(', ');
+        if (joined.length > 0) {
+          return new BadRequestException(joined);
+        }
+      }
+      if (typeof responseData?.error === 'string') {
+        return new BadRequestException(responseData.error);
+      }
+      if (
+        typeof error.message === 'string' &&
+        error.message.trim().length > 0
+      ) {
+        return new BadRequestException(error.message.trim());
+      }
+    }
+    return new BadRequestException('Payment request failed.');
+  }
+
   async initiateCheckout(dto: ClickPesaCheckoutDto) {
-    const orderRef = this.sanitizeOrderRef(dto.orderReference ?? dto.reference);
-    const phone = dto.phoneNumber.replace(/^\+/, '');
-    const token = await this.getToken();
+    try {
+      const orderRef = this.sanitizeOrderRef(dto.orderReference ?? dto.reference);
+      const phone = this.normalizeTzPhoneNumber(dto.phoneNumber);
+      const token = await this.getToken();
 
-    // Step 1: Preview — validate details and check payment method availability
-    const previewResponse = await firstValueFrom(
-      this.httpService.post(
-        `${this.baseUrl}/third-parties/payments/preview-ussd-push-request`,
-        {
-          amount: String(dto.amount),
-          currency: 'TZS',
-          orderReference: orderRef,
-          phoneNumber: phone,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
-    );
-
-    const activeMethods: ClickPesaActiveMethod[] =
-      previewResponse.data?.activeMethods ?? [];
-    const availableMethod = activeMethods.find((m) => m.status === 'AVAILABLE');
-
-    if (!availableMethod) {
-      const reason =
-        activeMethods[0]?.message ??
-        'No payment methods available for this phone number';
-      this.logger.warn(`ClickPesa preview failed for ${phone}: ${reason}`);
-      throw new BadRequestException(reason);
-    }
-
-    this.logger.log(
-      `ClickPesa preview OK — method: ${availableMethod.name}, fee: ${availableMethod.fee ?? 0}`,
-    );
-
-    // Step 2: Initiate USSD push
-    const initiateResponse = await firstValueFrom(
-      this.httpService.post(
-        `${this.baseUrl}/third-parties/payments/initiate-ussd-push-request`,
-        {
-          amount: String(dto.amount),
-          currency: 'TZS',
-          orderReference: orderRef,
-          phoneNumber: phone,
-        },
-        { headers: { Authorization: `Bearer ${token}` } },
-      ),
-    );
-
-    this.logger.log(
-      `ClickPesa USSD push initiated — orderRef: ${orderRef}, status: ${initiateResponse.data?.status}`,
-    );
-
-    // Store orderRef → cvId mapping in Redis for webhook lookup
-    if (dto.metadata?.cvId) {
-      await this.redis.set(
-        this.redisOrderKey(orderRef),
-        JSON.stringify({ cvId: dto.metadata.cvId }),
-        'EX',
-        ORDER_TTL_SECONDS,
+      // Step 1: Preview — validate details and check payment method availability
+      const previewResponse = await firstValueFrom(
+        this.httpService.post(
+          `${this.baseUrl}/third-parties/payments/preview-ussd-push-request`,
+          {
+            amount: String(dto.amount),
+            currency: 'TZS',
+            orderReference: orderRef,
+            phoneNumber: phone,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        ),
       );
-    }
 
-    return {
-      sessionId: orderRef,
-      provider: 'clickpesa',
-      status: 'pending',
-      message:
-        initiateResponse.data?.message ?? 'Awaiting mobile money confirmation',
-    };
+      const activeMethods: ClickPesaActiveMethod[] =
+        previewResponse.data?.activeMethods ?? [];
+      const availableMethod = activeMethods.find((m) => m.status === 'AVAILABLE');
+
+      if (!availableMethod) {
+        const reason =
+          activeMethods[0]?.message ??
+          'No payment methods available for this phone number';
+        this.logger.warn(`ClickPesa preview failed for ${phone}: ${reason}`);
+        throw new BadRequestException(reason);
+      }
+
+      this.logger.log(
+        `ClickPesa preview OK — method: ${availableMethod.name}, fee: ${availableMethod.fee ?? 0}`,
+      );
+
+      // Step 2: Initiate USSD push
+      const initiateResponse = await firstValueFrom(
+        this.httpService.post(
+          `${this.baseUrl}/third-parties/payments/initiate-ussd-push-request`,
+          {
+            amount: String(dto.amount),
+            currency: 'TZS',
+            orderReference: orderRef,
+            phoneNumber: phone,
+          },
+          { headers: { Authorization: `Bearer ${token}` } },
+        ),
+      );
+
+      this.logger.log(
+        `ClickPesa USSD push initiated — orderRef: ${orderRef}, status: ${initiateResponse.data?.status}`,
+      );
+
+      // Store orderRef → cvId mapping in Redis for webhook lookup
+      if (dto.metadata?.cvId) {
+        await this.redis.set(
+          this.redisOrderKey(orderRef),
+          JSON.stringify({ cvId: dto.metadata.cvId }),
+          'EX',
+          ORDER_TTL_SECONDS,
+        );
+      }
+
+      return {
+        sessionId: orderRef,
+        provider: 'clickpesa',
+        status: 'pending',
+        message:
+          initiateResponse.data?.message ?? 'Awaiting mobile money confirmation',
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw this.toProviderException(error);
+    }
   }
 
   // Step 3: Query payment status by orderReference
