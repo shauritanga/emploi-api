@@ -1,6 +1,16 @@
-import { Controller, Post, Get, Body, Param, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Public } from '../../common/decorators/puplic.decorator';
 import { PaymentsService } from './payments.service';
 import { ClickPesaCheckoutDto } from './dto/clickpesa-checkout.dto';
 
@@ -21,5 +31,13 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Query ClickPesa payment session status' })
   getSessionStatus(@Param('sessionId') sessionId: string) {
     return this.paymentsService.getSessionStatus(sessionId);
+  }
+
+  @Public()
+  @Post('clickpesa/webhook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'ClickPesa webhook receiver' })
+  handleWebhook(@Body() payload: Record<string, any>) {
+    return this.paymentsService.handleWebhook(payload);
   }
 }

@@ -1,6 +1,16 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  UnauthorizedException,
+  Inject,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { createHmac, timingSafeEqual } from 'crypto';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../redis/redis.module';
+import { PrismaService } from '../../prisma/prisma.services';
 import { ClickPesaCheckoutDto } from './dto/clickpesa-checkout.dto';
 
 interface ClickPesaPaymentRecord {
@@ -17,21 +27,30 @@ interface ClickPesaActiveMethod {
   message?: string;
 }
 
+// TTL for the orderRef → cvId mapping in Redis (24 hours)
+const ORDER_TTL_SECONDS = 86400;
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
   private readonly baseUrl: string;
   private readonly clientId: string;
   private readonly apiKey: string;
+  private readonly webhookSecret: string;
 
   private cachedToken: string | null = null;
   private tokenExpiresAt: Date = new Date(0);
 
-  constructor(private readonly httpService: HttpService) {
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly prisma: PrismaService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+  ) {
     this.baseUrl =
       process.env.CLICKPESA_BASE_URL ?? 'https://api.clickpesa.com';
     this.clientId = process.env.CLICKPESA_CLIENT_ID ?? '';
     this.apiKey = process.env.CLICKPESA_API_KEY ?? '';
+    this.webhookSecret = process.env.CLICKPESA_WEBHOOK_SECRET ?? '';
   }
 
   // Step 0: Generate and cache auth token (valid 1 hour, cached 55 min)
@@ -64,9 +83,12 @@ export class PaymentsService {
     return ref.replace(/[^a-zA-Z0-9]/g, '');
   }
 
+  private redisOrderKey(orderRef: string): string {
+    return `payment:order:${orderRef}`;
+  }
+
   async initiateCheckout(dto: ClickPesaCheckoutDto) {
     const orderRef = this.sanitizeOrderRef(dto.orderReference ?? dto.reference);
-    // ClickPesa requires no '+' prefix on phone numbers
     const phone = dto.phoneNumber.replace(/^\+/, '');
     const token = await this.getToken();
 
@@ -118,6 +140,16 @@ export class PaymentsService {
       `ClickPesa USSD push initiated — orderRef: ${orderRef}, status: ${initiateResponse.data?.status}`,
     );
 
+    // Store orderRef → cvId mapping in Redis for webhook lookup
+    if (dto.metadata?.cvId) {
+      await this.redis.set(
+        this.redisOrderKey(orderRef),
+        JSON.stringify({ cvId: dto.metadata.cvId }),
+        'EX',
+        ORDER_TTL_SECONDS,
+      );
+    }
+
     return {
       sessionId: orderRef,
       provider: 'clickpesa',
@@ -162,6 +194,140 @@ export class PaymentsService {
       transactionId: record?.id,
       message: record?.message,
     };
+  }
+
+  // Webhook: verify signature and process event
+  async handleWebhook(payload: Record<string, any>): Promise<void> {
+    if (!this.verifyChecksum(payload)) {
+      this.logger.warn('Webhook received with invalid checksum');
+      throw new UnauthorizedException('Invalid webhook signature');
+    }
+
+    const event: string = (payload.event ?? '').replace(/ /g, '_').toUpperCase();
+    const data = payload.data ?? {};
+
+    this.logger.log(`ClickPesa webhook received — event: ${event}, orderRef: ${data.orderReference}`);
+
+    switch (event) {
+      case 'PAYMENT_RECEIVED':
+        await this.onPaymentReceived(data);
+        break;
+      case 'PAYMENT_FAILED':
+        await this.onPaymentFailed(data);
+        break;
+      default:
+        this.logger.log(`Unhandled webhook event: ${event}`);
+    }
+  }
+
+  private async onPaymentReceived(data: Record<string, any>): Promise<void> {
+    const orderRef = data.orderReference as string;
+    if (!orderRef) return;
+
+    const stored = await this.redis.get(this.redisOrderKey(orderRef));
+    if (!stored) {
+      this.logger.warn(`Webhook PAYMENT_RECEIVED: no CV mapping for orderRef ${orderRef}`);
+      return;
+    }
+
+    const { cvId } = JSON.parse(stored) as { cvId: string };
+    const cv = await this.prisma.cv.findUnique({ where: { id: cvId } });
+    if (!cv) {
+      this.logger.warn(`Webhook PAYMENT_RECEIVED: CV ${cvId} not found`);
+      return;
+    }
+
+    const existing = (cv.contentJson as Record<string, any>) ?? {};
+    await this.prisma.cv.update({
+      where: { id: cvId },
+      data: {
+        contentJson: {
+          ...existing,
+          status: 'active',
+          paymentStatus: 'success',
+          hasPremiumEntitlement: true,
+          activationTxId: data.id,
+          activationUnlockedAt: new Date().toISOString(),
+          paymentProvider: 'clickpesa',
+          activationType: existing.activationType ?? 'one_time',
+        },
+      },
+    });
+
+    // Clean up Redis mapping
+    await this.redis.del(this.redisOrderKey(orderRef));
+
+    this.logger.log(`CV ${cvId} activated via webhook — txId: ${data.id}`);
+  }
+
+  private async onPaymentFailed(data: Record<string, any>): Promise<void> {
+    const orderRef = data.orderReference as string;
+    if (!orderRef) return;
+
+    const stored = await this.redis.get(this.redisOrderKey(orderRef));
+    if (!stored) return;
+
+    const { cvId } = JSON.parse(stored) as { cvId: string };
+    const cv = await this.prisma.cv.findUnique({ where: { id: cvId } });
+    if (!cv) return;
+
+    const existing = (cv.contentJson as Record<string, any>) ?? {};
+    await this.prisma.cv.update({
+      where: { id: cvId },
+      data: {
+        contentJson: {
+          ...existing,
+          paymentStatus: 'failed',
+        },
+      },
+    });
+
+    this.logger.log(`CV ${cvId} payment failed — orderRef: ${orderRef}`);
+  }
+
+  // HMAC-SHA256 checksum verification (ClickPesa spec)
+  private verifyChecksum(payload: Record<string, any>): boolean {
+    if (!this.webhookSecret) {
+      this.logger.warn('CLICKPESA_WEBHOOK_SECRET not set — skipping checksum verification');
+      return true;
+    }
+
+    const received = payload.checksum as string | undefined;
+    if (!received) return false;
+
+    const data: Record<string, any> = { ...payload };
+    delete data.checksum;
+    delete data.checksumMethod;
+
+    const canonical = this.sortKeysRecursively(data);
+    const serialized = JSON.stringify(canonical);
+    const expected = createHmac('sha256', this.webhookSecret)
+      .update(serialized)
+      .digest('hex');
+
+    try {
+      return timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
+
+  private sortKeysRecursively(obj: unknown): unknown {
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.sortKeysRecursively(item));
+    }
+    if (obj !== null && typeof obj === 'object') {
+      return Object.keys(obj as object)
+        .sort()
+        .reduce(
+          (acc, key) => {
+            acc[key] = this.sortKeysRecursively((obj as Record<string, unknown>)[key]);
+            return acc;
+          },
+          {} as Record<string, unknown>,
+        );
+    }
+    return obj;
   }
 
   private mapStatus(
