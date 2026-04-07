@@ -104,11 +104,7 @@ export class CvService {
     return cv;
   }
 
-  async update(
-    cvId: string,
-    seekerUserId: string,
-    dto: UpdateCvDto,
-  ) {
+  async update(cvId: string, seekerUserId: string, dto: UpdateCvDto) {
     const cv = await this.prisma.cv.findUnique({
       where: { id: cvId },
       include: { seeker: { select: { userId: true, id: true } } },

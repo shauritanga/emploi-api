@@ -1,6 +1,6 @@
 import { Process, Processor } from '@nestjs/bull';
 import bull from 'bull';
-import { Logger } from '@nestjs/common'
+import { Logger } from '@nestjs/common';
 import { QueueName } from '../../../common/enums';
 import { ApplicationsService } from 'src/modules/applications/applications.service';
 

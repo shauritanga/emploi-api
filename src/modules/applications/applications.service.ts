@@ -60,10 +60,12 @@ export class ApplicationsService {
     const screeningAnswersArray: { questionId: string; answer: string }[] =
       Array.isArray(dto.screeningAnswers)
         ? dto.screeningAnswers
-        : Object.entries(dto.screeningAnswers ?? {}).map(([questionId, answer]) => ({
-            questionId,
-            answer: String(answer),
-          }));
+        : Object.entries(dto.screeningAnswers ?? {}).map(
+            ([questionId, answer]) => ({
+              questionId,
+              answer: String(answer),
+            }),
+          );
 
     // Validate required screening questions are answered
     const requiredQuestions = job.screeningQuestions.filter(

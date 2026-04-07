@@ -64,9 +64,15 @@ export class AuthService {
             userId: newUser.id,
             fullName: dto.fullName,
             ...(dto.locationCity && { locationCity: dto.locationCity }),
-            ...(dto.locationCountry && { locationCountry: dto.locationCountry }),
-            ...(dto.salaryExpectationMin != null && { salaryExpectationMin: dto.salaryExpectationMin }),
-            ...(dto.salaryExpectationMax != null && { salaryExpectationMax: dto.salaryExpectationMax }),
+            ...(dto.locationCountry && {
+              locationCountry: dto.locationCountry,
+            }),
+            ...(dto.salaryExpectationMin != null && {
+              salaryExpectationMin: dto.salaryExpectationMin,
+            }),
+            ...(dto.salaryExpectationMax != null && {
+              salaryExpectationMax: dto.salaryExpectationMax,
+            }),
             ...(dto.salaryCurrency && { salaryCurrency: dto.salaryCurrency }),
           },
         });
@@ -78,7 +84,9 @@ export class AuthService {
             userId: newUser.id,
             companyName: dto.companyName!,
             ...(dto.locationCity && { locationCity: dto.locationCity }),
-            ...(dto.locationCountry && { locationCountry: dto.locationCountry }),
+            ...(dto.locationCountry && {
+              locationCountry: dto.locationCountry,
+            }),
             ...(dto.companySize && { companySize: dto.companySize }),
           },
         });

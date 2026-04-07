@@ -21,7 +21,9 @@ export const REDIS_PRESENCE = 'REDIS_PRESENCE';
           lazyConnect: true,
           maxRetriesPerRequest: 3,
         });
-        redis.on('error', (err) => console.error('Redis Client Error:', err.message));
+        redis.on('error', (err) =>
+          console.error('Redis Client Error:', err.message),
+        );
         return redis;
       },
     },
@@ -38,7 +40,9 @@ export const REDIS_PRESENCE = 'REDIS_PRESENCE';
           lazyConnect: true,
           maxRetriesPerRequest: 3,
         });
-        redis.on('error', (err) => console.error('Redis Presence Error:', err.message));
+        redis.on('error', (err) =>
+          console.error('Redis Presence Error:', err.message),
+        );
         return redis;
       },
     },

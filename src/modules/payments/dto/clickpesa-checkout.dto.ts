@@ -1,9 +1,4 @@
-import {
-  IsNumber,
-  IsString,
-  IsOptional,
-  IsObject,
-} from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsObject } from 'class-validator';
 
 export class ClickPesaCheckoutDto {
   @IsNumber()

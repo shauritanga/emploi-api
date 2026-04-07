@@ -173,12 +173,11 @@ export class PaymentsService {
 
     const records: ClickPesaPaymentRecord[] = Array.isArray(response.data)
       ? response.data
-      : response.data?.data ?? [];
+      : (response.data?.data ?? []);
 
     const record =
-      records.find(
-        (r) => r.orderReference === orderRef || r.id === orderRef,
-      ) ?? records[0];
+      records.find((r) => r.orderReference === orderRef || r.id === orderRef) ??
+      records[0];
 
     const rawStatus = (record?.status ?? '').toUpperCase();
     const status = this.mapStatus(rawStatus);
@@ -203,10 +202,14 @@ export class PaymentsService {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
-    const event: string = (payload.event ?? '').replace(/ /g, '_').toUpperCase();
+    const event: string = (payload.event ?? '')
+      .replace(/ /g, '_')
+      .toUpperCase();
     const data = payload.data ?? {};
 
-    this.logger.log(`ClickPesa webhook received — event: ${event}, orderRef: ${data.orderReference}`);
+    this.logger.log(
+      `ClickPesa webhook received — event: ${event}, orderRef: ${data.orderReference}`,
+    );
 
     switch (event) {
       case 'PAYMENT_RECEIVED':
@@ -226,7 +229,9 @@ export class PaymentsService {
 
     const stored = await this.redis.get(this.redisOrderKey(orderRef));
     if (!stored) {
-      this.logger.warn(`Webhook PAYMENT_RECEIVED: no CV mapping for orderRef ${orderRef}`);
+      this.logger.warn(
+        `Webhook PAYMENT_RECEIVED: no CV mapping for orderRef ${orderRef}`,
+      );
       return;
     }
 
@@ -288,7 +293,9 @@ export class PaymentsService {
   // HMAC-SHA256 checksum verification (ClickPesa spec)
   private verifyChecksum(payload: Record<string, any>): boolean {
     if (!this.webhookSecret) {
-      this.logger.warn('CLICKPESA_WEBHOOK_SECRET not set — skipping checksum verification');
+      this.logger.warn(
+        'CLICKPESA_WEBHOOK_SECRET not set — skipping checksum verification',
+      );
       return true;
     }
 
@@ -317,11 +324,13 @@ export class PaymentsService {
       return obj.map((item) => this.sortKeysRecursively(item));
     }
     if (obj !== null && typeof obj === 'object') {
-      return Object.keys(obj as object)
+      return Object.keys(obj)
         .sort()
         .reduce(
           (acc, key) => {
-            acc[key] = this.sortKeysRecursively((obj as Record<string, unknown>)[key]);
+            acc[key] = this.sortKeysRecursively(
+              (obj as Record<string, unknown>)[key],
+            );
             return acc;
           },
           {} as Record<string, unknown>,
