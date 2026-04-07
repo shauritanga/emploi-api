@@ -17,11 +17,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import * as currentUserDecorator from '../../common/decorators/current-user.decorator';
 import { UserRole } from 'src/common/enums';
-import {
-  ApplicationsService,
-  CreateApplicationDto,
-  UpdateStatusDto,
-} from './applications.service';
+import { ApplicationsService } from './applications.service';
+import { CreateApplicationDto } from './dto/create-application.dto';
+import { UpdateStatusDto } from './dto/update-status.dto';
 
 @ApiTags('Applications')
 @ApiBearerAuth()

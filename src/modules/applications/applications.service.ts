@@ -14,35 +14,10 @@ import { REDIS_CLIENT } from 'src/redis/redis.module';
 import { Redis } from 'ioredis';
 import { QueueName } from '../../common/enums';
 import { PrismaService } from 'src/prisma/prisma.services';
-import { IsOptional, IsString, IsObject, IsEnum } from 'class-validator';
+import { CreateApplicationDto } from './dto/create-application.dto';
+import { UpdateStatusDto } from './dto/update-status.dto';
 
-export class CreateApplicationDto {
-  @IsOptional()
-  @IsString()
-  cvId?: string;
-
-  @IsOptional()
-  @IsString()
-  coverLetter?: string;
-
-  // Flutter sends a map {questionId: answer}; converted to array in the service
-  @IsOptional()
-  @IsObject()
-  screeningAnswers?: Record<string, string>;
-}
-
-export class UpdateStatusDto {
-  @IsEnum(ApplicationStatus)
-  status: ApplicationStatus;
-
-  @IsOptional()
-  @IsString()
-  note?: string;
-
-  @IsOptional()
-  @IsString()
-  rejectionReason?: string;
-}
+export { CreateApplicationDto, UpdateStatusDto };
 
 @Injectable()
 export class ApplicationsService {
