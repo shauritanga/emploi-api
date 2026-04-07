@@ -20,6 +20,7 @@ import { MessagingService } from './messaging.service';
 import {
   InitiateConversationDto,
   CreateSeekerConversationDto,
+  SendMessageDto,
 } from './dto/messaging.dto';
 
 @ApiTags('Messaging')
@@ -35,6 +36,15 @@ export class MessagingController {
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
   ) {
     return this.messagingService.getUserConversations(user.sub);
+  }
+
+  @Get('requests/pending')
+  @Roles(UserRole.SEEKER, UserRole.BOTH)
+  @ApiOperation({ summary: 'Get pending employer message requests for seeker' })
+  async getPendingRequests(
+    @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
+  ) {
+    return this.messagingService.getPendingRequests(user.sub);
   }
 
   @Post('conversations')
@@ -96,6 +106,25 @@ export class MessagingController {
       limit: resolvedLimit,
       data: messages,
     };
+  }
+
+  @Post('conversations/:id/messages')
+  @ApiOperation({ summary: 'Send a message to a conversation (REST fallback)' })
+  async sendMessage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
+    @Body() dto: SendMessageDto,
+  ) {
+    return this.messagingService.sendMessage(user.sub, id, dto.content);
+  }
+
+  @Patch('conversations/:id/read')
+  @ApiOperation({ summary: 'Mark a conversation as read' })
+  async markConversationRead(
+    @Param('id', ParseUUIDPipe) id: string,
+    @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
+  ) {
+    return this.messagingService.markConversationRead(user.sub, id);
   }
 
   @Patch('conversations/:id/accept')

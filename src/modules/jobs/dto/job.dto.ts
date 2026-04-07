@@ -64,6 +64,11 @@ export class CreateJobDto {
   @IsOptional() @IsDateString() applicationDeadline?: string;
   @IsOptional() @IsInt() @Min(1) maxApplicants?: number;
 
+  @ValidateIf(
+    (o) =>
+      o.isStreamlinedHiring === true ||
+      (Array.isArray(o.screeningQuestions) && o.screeningQuestions.length > 0),
+  )
   @Type(() => ScreeningQuestionDto)
   @IsArray()
   @ArrayMinSize(3, { message: 'Minimum 3 screening questions required' })
@@ -84,6 +89,11 @@ export class UpdateJobDto {
   @IsOptional() @IsBoolean() isStreamlinedHiring?: boolean;
   @IsOptional() @IsDateString() applicationDeadline?: string;
 
+  @ValidateIf(
+    (o) =>
+      o.isStreamlinedHiring === true ||
+      (Array.isArray(o.screeningQuestions) && o.screeningQuestions.length > 0),
+  )
   @IsOptional()
   @Type(() => ScreeningQuestionDto)
   @IsArray()

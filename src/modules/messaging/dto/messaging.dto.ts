@@ -1,4 +1,10 @@
-import { IsOptional, IsBoolean, IsString, IsUUID } from 'class-validator';
+import {
+  IsOptional,
+  IsBoolean,
+  IsString,
+  IsUUID,
+  IsNotEmpty,
+} from 'class-validator';
 
 export class InitiateConversationDto {
   @IsString()
@@ -20,4 +26,10 @@ export class CreateSeekerConversationDto {
   @IsString()
   @IsUUID()
   targetUserId: string;
+}
+
+export class SendMessageDto {
+  @IsString()
+  @IsNotEmpty()
+  content: string;
 }
