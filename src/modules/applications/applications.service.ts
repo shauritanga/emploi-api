@@ -14,16 +14,33 @@ import { REDIS_CLIENT } from 'src/redis/redis.module';
 import { Redis } from 'ioredis';
 import { QueueName } from '../../common/enums';
 import { PrismaService } from 'src/prisma/prisma.services';
+import { IsOptional, IsString, IsObject, IsEnum } from 'class-validator';
 
 export class CreateApplicationDto {
+  @IsOptional()
+  @IsString()
   cvId?: string;
+
+  @IsOptional()
+  @IsString()
   coverLetter?: string;
-  screeningAnswers?: { questionId: string; answer: string }[];
+
+  // Flutter sends a map {questionId: answer}; converted to array in the service
+  @IsOptional()
+  @IsObject()
+  screeningAnswers?: Record<string, string>;
 }
 
 export class UpdateStatusDto {
+  @IsEnum(ApplicationStatus)
   status: ApplicationStatus;
+
+  @IsOptional()
+  @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
   rejectionReason?: string;
 }
 
@@ -64,11 +81,20 @@ export class ApplicationsService {
     if (existing)
       throw new BadRequestException('You have already applied to this job');
 
+    // Normalise screeningAnswers: accept both map {qId: answer} and array [{questionId, answer}]
+    const screeningAnswersArray: { questionId: string; answer: string }[] =
+      Array.isArray(dto.screeningAnswers)
+        ? dto.screeningAnswers
+        : Object.entries(dto.screeningAnswers ?? {}).map(([questionId, answer]) => ({
+            questionId,
+            answer: String(answer),
+          }));
+
     // Validate required screening questions are answered
     const requiredQuestions = job.screeningQuestions.filter(
       (q) => q.isRequired,
     );
-    const answeredIds = (dto.screeningAnswers ?? []).map((a) => a.questionId);
+    const answeredIds = screeningAnswersArray.map((a) => a.questionId);
     const missing = requiredQuestions.filter(
       (q) => !answeredIds.includes(q.id),
     );
@@ -78,7 +104,7 @@ export class ApplicationsService {
 
     // Compute screening score for knockout questions
     let screeningScore = 100;
-    const answersWithValidity = (dto.screeningAnswers ?? []).map((a) => {
+    const answersWithValidity = screeningAnswersArray.map((a) => {
       const question = job.screeningQuestions.find(
         (q) => q.id === a.questionId,
       );
