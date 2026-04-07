@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Post,
@@ -28,27 +27,6 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 @Controller('applications')
 export class ApplicationsController {
   constructor(private applicationsService: ApplicationsService) {}
-  private static readonly uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-  private toCreateApplicationDto(
-    payload: Record<string, unknown>,
-  ): CreateApplicationDto {
-    const dto = new CreateApplicationDto();
-    if (typeof payload.cvId === 'string') {
-      if (!ApplicationsController.uuidRegex.test(payload.cvId)) {
-        throw new BadRequestException('cvId must be a valid UUID');
-      }
-      dto.cvId = payload.cvId;
-    }
-    if (typeof payload.coverLetter === 'string' || payload.coverLetter === null) {
-      dto.coverLetter = payload.coverLetter ?? undefined;
-    }
-    if (payload.screeningAnswers != null) {
-      dto.screeningAnswers = payload.screeningAnswers as Record<string, string>;
-    }
-    return dto;
-  }
 
   @Post('jobs/:jobId')
   @ApiBody({ type: CreateApplicationDto })
@@ -56,9 +34,8 @@ export class ApplicationsController {
   apply(
     @Param('jobId', ParseUUIDPipe) jobId: string,
     @currentUserDecorator.CurrentUser() user: currentUserDecorator.JwtPayload,
-    @Body() payload: Record<string, unknown>,
+    @Body() dto: CreateApplicationDto,
   ) {
-    const dto = this.toCreateApplicationDto(payload);
     return this.applicationsService.apply(user.sub, jobId, dto);
   }
 
