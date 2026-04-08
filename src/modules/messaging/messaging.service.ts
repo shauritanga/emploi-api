@@ -168,7 +168,7 @@ export class MessagingService {
   }
 
   async getUserConversations(userId: string) {
-    return this.prisma.conversation.findMany({
+    const conversations = await this.prisma.conversation.findMany({
       where: {
         participants: { some: { userId } },
         isAccepted: true,
@@ -186,6 +186,29 @@ export class MessagingService {
       },
       orderBy: { updatedAt: 'desc' },
     });
+
+    // Enrich participants with employer profile info for non-seekers
+    const enriched = await Promise.all(
+      conversations.map(async (conv) => {
+        const enrichedParticipants = await Promise.all(
+          conv.participants.map(async (p) => {
+            if (p.seeker) return p;
+            // Check if participant is an employer
+            const employer = await this.prisma.employerProfile.findUnique({
+              where: { userId: p.userId },
+              select: { companyName: true, logoUrl: true },
+            });
+            return {
+              ...p,
+              employer: employer || null,
+            };
+          }),
+        );
+        return { ...conv, participants: enrichedParticipants };
+      }),
+    );
+
+    return enriched;
   }
 
   async getMessages(
@@ -232,7 +255,19 @@ export class MessagingService {
     );
     if (!isParticipant) throw new ForbiddenException();
 
-    return conversation;
+    // Enrich participants with employer profile info
+    const enrichedParticipants = await Promise.all(
+      conversation.participants.map(async (p) => {
+        if (p.seeker) return p;
+        const employer = await this.prisma.employerProfile.findUnique({
+          where: { userId: p.userId },
+          select: { companyName: true, logoUrl: true },
+        });
+        return { ...p, employer: employer || null };
+      }),
+    );
+
+    return { ...conversation, participants: enrichedParticipants };
   }
 
   async archiveConversation(conversationId: string, userId: string) {
@@ -259,7 +294,7 @@ export class MessagingService {
   }
 
   async getPendingRequests(seekerUserId: string) {
-    return this.prisma.conversation.findMany({
+    const requests = await this.prisma.conversation.findMany({
       where: {
         type: ConversationType.SEEKER_EMPLOYER,
         isAccepted: false,
@@ -273,5 +308,24 @@ export class MessagingService {
         },
       },
     });
+
+    // Enrich with employer profile info
+    const enriched = await Promise.all(
+      requests.map(async (conv) => {
+        const enrichedParticipants = await Promise.all(
+          conv.participants.map(async (p) => {
+            if (p.seeker) return p;
+            const employer = await this.prisma.employerProfile.findUnique({
+              where: { userId: p.userId },
+              select: { companyName: true, logoUrl: true },
+            });
+            return { ...p, employer: employer || null };
+          }),
+        );
+        return { ...conv, participants: enrichedParticipants };
+      }),
+    );
+
+    return enriched;
   }
 }
