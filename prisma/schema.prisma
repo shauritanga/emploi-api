@@ -119,6 +119,7 @@ enum ProficiencyLevel {
 enum QuestionType {
   TEXT
   MULTIPLE_CHOICE
+  TRUE_FALSE
   FILE_UPLOAD
   URL
 }

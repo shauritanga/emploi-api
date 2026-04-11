@@ -52,8 +52,8 @@ export class CreateJobDto {
   @IsEnum(JobType) jobType: JobType;
   @IsEnum(ExperienceLevel) experienceLevel: ExperienceLevel;
 
-  @IsInt() @Min(0) salaryMin: number;
-  @IsInt() @Min(0) salaryMax: number;
+  @IsOptional() @IsInt() @Min(0) salaryMin?: number;
+  @IsOptional() @IsInt() @Min(0) salaryMax?: number;
   @IsOptional() @IsString() salaryCurrency?: string;
   @IsOptional() @IsBoolean() salaryIsNegotiable?: boolean;
 
